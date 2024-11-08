@@ -1,0 +1,12 @@
+.DS_Store
+
+# venv
+venv/
+
+#python
+__pycache__/
+
+#node
+node_modules/   
+
+.env 

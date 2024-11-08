@@ -14,7 +14,7 @@ app = FastAPI()
 
 # Get environment variables with defaults
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "https://your-frontend-app-url.ondigitalocean.app")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://vishva-app-digitalocean-6te3v.ondigitalocean.app")
 
 # Configure CORS based on environment
 ALLOWED_ORIGINS = [

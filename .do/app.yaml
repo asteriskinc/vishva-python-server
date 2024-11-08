@@ -4,7 +4,7 @@ services:
   - name: websocket-api
     git:
       branch: main
-      repo_clone_url: https://github.com/yourusername/yourrepo.git
+      repo_clone_url: https://github.com/apekshik/vishva-python-server.git
     build_command: pip install -r requirements.txt
     run_command: uvicorn server:app --host 0.0.0.0 --port $PORT
     envs:

@@ -1,4 +1,3 @@
-# server.py
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import logging
@@ -7,6 +6,7 @@ import json
 from datetime import datetime
 from typing import Set
 import os
+from orcs import Orcs, Agent  # Import your agent system
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -37,104 +37,145 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 class ConnectionManager:
     def __init__(self):
-        self._active_connections: Set[WebSocket] = set()
+        self._active_connections: Dict[str, WebSocket] = {}
+        self._connection_status: Dict[str, bool] = {}
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
-        self._active_connections.add(websocket)
-        logger.info(f"Client connected. Total connections: {len(self._active_connections)}")
+        connection_id = str(id(websocket))
+        self._active_connections[connection_id] = websocket
+        self._connection_status[connection_id] = True
+        logger.info(f"Client connected. Connection ID: {connection_id}. Total connections: {len(self._active_connections)}")
+        return connection_id
 
-    async def disconnect(self, websocket: WebSocket):
-        if websocket in self._active_connections:
-            self._active_connections.remove(websocket)
-            logger.info(f"Client disconnected. Total connections: {len(self._active_connections)}")
+    async def disconnect(self, connection_id: str):
+        if connection_id in self._active_connections:
+            self._connection_status[connection_id] = False
+            del self._active_connections[connection_id]
+            del self._connection_status[connection_id]
+            logger.info(f"Client disconnected. Connection ID: {connection_id}. Total connections: {len(self._active_connections)}")
 
-    async def send_update(self, websocket: WebSocket, message_type: str, data: dict):
+    async def is_connected(self, connection_id: str) -> bool:
+        return connection_id in self._connection_status and self._connection_status[connection_id]
+
+    async def send_message(self, connection_id: str, message: dict) -> bool:
+        if not await self.is_connected(connection_id):
+            logger.warning(f"Attempted to send message to disconnected client: {connection_id}")
+            return False
+
         try:
-            message = {
-                "type": message_type,
-                "data": data,
-                "timestamp": datetime.now().isoformat()
-            }
-            await websocket.send_text(json.dumps(message))
+            websocket = self._active_connections.get(connection_id)
+            if websocket:
+                await websocket.send_text(json.dumps(message))
+                return True
         except Exception as e:
-            logger.error(f"Error sending update: {e}")
-            await self.disconnect(websocket)
+            logger.error(f"Error sending message: {e}")
+            await self.disconnect(connection_id)
+        return False
+
+    async def send_agent_update(self, connection_id: str, agent_name: str, status: str, data: dict = None) -> bool:
+        message = {
+            "type": "agent_update",
+            "data": {
+                "agent": {
+                    "name": agent_name,
+                    "currentTask": data.get("currentTask") if data else None
+                },
+                "status": status,
+                **(data or {})
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+        return await self.send_message(connection_id, message)
+
+    async def send_task_complete(self, connection_id: str, task_id: str, message: str = None) -> bool:
+        complete_message = {
+            "type": "task_complete",
+            "data": {
+                "taskId": task_id,
+                "message": message
+            },
+            "timestamp": datetime.now().isoformat()
+        }
+        return await self.send_message(connection_id, complete_message)
 
 manager = ConnectionManager()
 
-async def simulate_video_processing(websocket: WebSocket):
-    """Simulates a long-running video processing task with multiple steps"""
-    
-    # Simulate loading video
-    await manager.send_update(websocket, "status", {
-        "step": "loading",
-        "message": "Loading video file...",
-        "progress": 0
-    })
-    await asyncio.sleep(2)  # Simulate work
+async def process_search_query(connection_id: str, query: str):
+    """Process search query using the agent system"""
+    try:
+        # Intent Agent
+        if await manager.send_agent_update(connection_id, "Intent Agent", 
+            "Analyzing search query...", {"currentTask": "intent"}):
+            await asyncio.sleep(4)
+            await manager.send_task_complete(connection_id, "intent", "Search query analyzed")
 
-    # Simulate analyzing frames
-    total_frames = 300
-    for frame in range(0, total_frames, 30):
-        progress = (frame / total_frames) * 100
-        await manager.send_update(websocket, "status", {
-            "step": "analyzing",
-            "message": f"Analyzing frame {frame}/{total_frames}",
-            "progress": progress
+        # Availability Check
+        if await manager.send_agent_update(connection_id, "Movie Agent", 
+            "Checking movie availability...", {"currentTask": "availability"}):
+            await asyncio.sleep(3)
+            await manager.send_task_complete(connection_id, "availability", "Movie found in theaters")
+
+        # Find Theaters
+        if await manager.send_agent_update(connection_id, "Movie Agent", 
+            "Locating nearby theaters...", 
+            {
+                "currentTask": "theaters",
+                "theaters": [
+                    {
+                        "name": "AMC Universal CityWalk",
+                        "distance": "2.5 miles",
+                        "nextShowtime": "7:30 PM"
+                    },
+                    {
+                        "name": "Regal LA Live",
+                        "distance": "3.8 miles",
+                        "nextShowtime": "8:00 PM"
+                    }
+                ]
+            }):
+            await asyncio.sleep(3)
+            await manager.send_task_complete(connection_id, "theaters", "Found nearby theaters")
+
+        # Get Directions
+        if await manager.send_agent_update(connection_id, "Directions Agent", 
+            "Calculating routes to theaters...", {"currentTask": "directions"}):
+            await asyncio.sleep(3.5)
+            await manager.send_task_complete(connection_id, "directions", "Route planning completed")
+
+    except Exception as e:
+        logger.error(f"Error processing search: {e}")
+        await manager.send_message(connection_id, {
+            "type": "error",
+            "data": {"message": str(e)},
+            "timestamp": datetime.now().isoformat()
         })
-        await asyncio.sleep(0.5)  # Simulate work
-
-    # Simulate applying filters
-    filters = ["noise_reduction", "color_correction", "stabilization"]
-    for idx, filter_name in enumerate(filters):
-        progress = ((idx + 1) / len(filters)) * 100
-        await manager.send_update(websocket, "status", {
-            "step": "filtering",
-            "message": f"Applying {filter_name}...",
-            "progress": progress
-        })
-        await asyncio.sleep(1.5)  # Simulate work
-
-    # Simulate export
-    await manager.send_update(websocket, "status", {
-        "step": "exporting",
-        "message": "Exporting processed video...",
-        "progress": 100
-    })
-    await asyncio.sleep(2)  # Simulate work
-
-    # Send completion message
-    await manager.send_update(websocket, "complete", {
-        "message": "Video processing completed successfully!",
-        "stats": {
-            "frames_processed": total_frames,
-            "filters_applied": len(filters),
-            "duration_seconds": 10
-        }
-    })
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    connection_id = None
     try:
-        await manager.connect(websocket)
+        connection_id = await manager.connect(websocket)
         
-        while True:
+        while await manager.is_connected(connection_id):
             try:
                 data = await websocket.receive_text()
                 message = json.loads(data)
                 
-                if message.get("action") == "start_processing":
-                    await simulate_video_processing(websocket)
+                if message.get("action") == "start_search":
+                    await process_search_query(connection_id, message.get("query"))
                 else:
-                    await manager.send_update(websocket, "error", {
-                        "message": "Unknown action"
+                    await manager.send_message(connection_id, {
+                        "type": "error",
+                        "data": {"message": "Unknown action"},
+                        "timestamp": datetime.now().isoformat()
                     })
                     
             except WebSocketDisconnect:
-                logger.info("WebSocket disconnected normally")
+                logger.info(f"WebSocket disconnected normally. Connection ID: {connection_id}")
                 break
             except json.JSONDecodeError:
                 logger.error("Invalid JSON received")
@@ -143,16 +184,11 @@ async def websocket_endpoint(websocket: WebSocket):
                 logger.error(f"Error processing message: {e}")
                 break
     except Exception as e:
-        logger.error(f"Error handling WebSocket connection: {e}")
+        logger.error(f"Error in websocket endpoint: {e}")
     finally:
-        await manager.disconnect(websocket)
+        if connection_id:
+            await manager.disconnect(connection_id)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(
-        app, 
-        host="0.0.0.0",  # Listen on all available interfaces
-        port=8000,
-        ssl_keyfile=None,  # Add these if you want to use SSL locally
-        ssl_certfile=None,
-    )
+    uvicorn.run(app, host="0.0.0.0", port=8000)

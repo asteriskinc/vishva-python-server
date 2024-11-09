@@ -137,7 +137,7 @@ async def process_search_query(connection_id: str, query: str):
                     }
                 ]
             }):
-            await asyncio.sleep(3)
+            await asyncio.sleep(3   )
             await manager.send_task_complete(connection_id, "theaters", "Found nearby theaters")
 
         # Get Directions

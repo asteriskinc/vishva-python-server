@@ -9,8 +9,8 @@ import uuid
 from datetime import datetime
 from pydantic import BaseModel
 
-from .utils.context import get_user_context
-from .agents import (
+from utils.context import get_user_context
+from agents import (
     intent_agent,
     movie_agent,
     navigation_agent,

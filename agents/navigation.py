@@ -4,6 +4,7 @@ from typing import Dict, Any, Optional, Tuple
 import urllib.parse
 import requests
 import os
+from utils.context import get_user_context
 
 def get_distance(origin: str, destination: str) -> Optional[Tuple[str, str]]:
     """Get distance and duration between locations using Google Distance Matrix API"""

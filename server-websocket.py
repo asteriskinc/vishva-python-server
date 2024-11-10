@@ -106,6 +106,55 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 async def process_search_query(connection_id: str, query: str):
+    client = Orcs()
+    starter_agent = _get_starter_agent()
+    try:
+        while (
+            response := client.run_generator(
+                agent=starter_agent,
+                messages=[]
+        )):
+            active_agent, message_dict, context_variables, is_final = response
+            await manager.send_message(connection_id, {
+                "type": "turn_complete" if is_final else "turn_in_progress",
+                "data": {
+                    "agent": active_agent.name,
+                    "body": message_dict,
+                },
+                "timestamp": datetime.now().isoformat()
+            })
+        else:
+            await manager.send_message(connection_id, {
+                "type": "task_complete",
+                "data": {},
+                "timestamp": datetime.now().isoformat()
+            })
+    except Exception as e:
+        logger.error(f"Error processing search: {e}")
+        await manager.send_message(connection_id, {
+            "type": "error",
+            "data": {"message": str(e)},
+            "timestamp": datetime.now().isoformat()
+        })
+
+
+def _get_starter_agent() -> Agent:
+    def transfer_to_agent_b():
+        return agent_b
+
+    agent_a = Agent(
+        name="Agent A",
+        instructions="You are a helpful agent.",
+        functions=[transfer_to_agent_b],
+    )
+
+    agent_b = Agent(
+        name="Agent B",
+        instructions="Only speak in Haikus.",
+    )
+    return agent_a
+
+async def process_search_query_template(connection_id: str, query: str): 
     """Process search query using the agent system"""
     try:
         # Intent Agent

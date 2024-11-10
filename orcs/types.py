@@ -18,8 +18,6 @@ class Agent(BaseModel):
     functions: List[AgentFunction] = []
     tool_choice: str = None
     parallel_tool_calls: bool = True
-    json_mode: bool = False
-    json_schema: dict = None
 
 
 class Response(BaseModel):

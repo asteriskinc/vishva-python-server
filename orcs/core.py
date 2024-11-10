@@ -61,8 +61,6 @@ class Orcs:
             "tools": tools or None,
             "tool_choice": agent.tool_choice,
             "stream": stream,
-            "json_mode": agent.json_mode,
-            "json_schema": agent.json_schema,
         }
 
         if tools:
@@ -292,3 +290,78 @@ class Orcs:
             agent=active_agent,
             context_variables=context_variables,
         )
+
+    def run_generator(
+        self,
+        agent: Agent,
+        messages: List,
+        context_variables: dict = {},
+        model_override: str = None,
+        debug: bool = False,
+        max_turns: int = float("inf"),
+        execute_tools: bool = True,
+    ):
+        """
+        Generator version of the run method that yields each agent's output and state.
+        
+        Yields:
+            tuple: (active_agent, message, context_variables, is_final)
+                - active_agent: The current agent processing the request
+                - message: The message/response from the agent
+                - context_variables: Current state of context variables
+                - is_final: Boolean indicating if this is the final yield
+        """
+        active_agent = agent
+        context_variables = copy.deepcopy(context_variables)
+        history = copy.deepcopy(messages)
+        init_len = len(messages)
+        turn_count = 0
+
+        while turn_count < max_turns and active_agent:
+            turn_count += 1
+
+            # Get completion with current history, agent
+            completion = self.get_chat_completion(
+                agent=active_agent,
+                history=history,
+                context_variables=context_variables,
+                model_override=model_override,
+                stream=False,
+                debug=debug,
+            )
+            
+            message = completion.choices[0].message
+            debug_print(debug, "Received completion:", message)
+            message.sender = active_agent.name
+            
+            # Convert message to dict to avoid OpenAI types
+            message_dict = json.loads(message.model_dump_json())
+            history.append(message_dict)
+
+            # If no tool calls or execute_tools is False, this is our final yield
+            if not message.tool_calls or not execute_tools:
+                debug_print(debug, "Ending turn.")
+                yield (active_agent, message_dict, context_variables, True)
+                break
+
+            # Yield current state before processing tool calls
+            yield (active_agent, message_dict, context_variables, False)
+
+            # Handle function calls, updating context_variables, and switching agents
+            partial_response = self.handle_tool_calls(
+                message.tool_calls,
+                active_agent.functions,
+                context_variables,
+                debug
+            )
+            
+            history.extend(partial_response.messages)
+            context_variables.update(partial_response.context_variables)
+            
+            # If we have a new agent, we'll continue with that in the next iteration
+            if partial_response.agent:
+                active_agent = partial_response.agent
+            else:
+                # If no new agent and we've handled all tool calls, we're done
+                yield (active_agent, partial_response.messages, context_variables, True)
+                break

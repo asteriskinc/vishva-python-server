@@ -8,6 +8,9 @@ from datetime import datetime
 from typing import Set
 import os
 from orcs import Orcs, Agent  # Import your agent system
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -109,12 +112,11 @@ async def process_search_query(connection_id: str, query: str):
     client = Orcs()
     starter_agent = _get_starter_agent()
     try:
-        while (
-            response := client.run_generator(
-                agent=starter_agent,
-                messages=[]
-        )):
-            active_agent, message_dict, context_variables, is_final = response
+        # Use for loop to iterate over generator
+        for active_agent, message_dict, context_variables, is_final in client.run_generator(
+            agent=starter_agent,
+            messages=[{"role": "user", "content": query}]
+        ):
             await manager.send_message(connection_id, {
                 "type": "turn_complete" if is_final else "turn_in_progress",
                 "data": {
@@ -123,12 +125,14 @@ async def process_search_query(connection_id: str, query: str):
                 },
                 "timestamp": datetime.now().isoformat()
             })
-        else:
-            await manager.send_message(connection_id, {
-                "type": "task_complete",
-                "data": {},
-                "timestamp": datetime.now().isoformat()
-            })
+        
+        # After generator completes, send task complete message
+        await manager.send_message(connection_id, {
+            "type": "task_complete",
+            "data": {},
+            "timestamp": datetime.now().isoformat()
+        })
+            
     except Exception as e:
         logger.error(f"Error processing search: {e}")
         await manager.send_message(connection_id, {
@@ -139,6 +143,11 @@ async def process_search_query(connection_id: str, query: str):
 
 
 def _get_starter_agent() -> Agent:
+    agent_b = Agent(
+        name="Agent B",
+        instructions="Only speak in Haikus.",
+    )
+
     def transfer_to_agent_b():
         return agent_b
 
@@ -148,10 +157,6 @@ def _get_starter_agent() -> Agent:
         functions=[transfer_to_agent_b],
     )
 
-    agent_b = Agent(
-        name="Agent B",
-        instructions="Only speak in Haikus.",
-    )
     return agent_a
 
 async def process_search_query_template(connection_id: str, query: str): 

@@ -1,4 +1,4 @@
-# server.py
+# this was the old server.py code for the websocket simulation for video processing demo. Just for reference.
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import logging

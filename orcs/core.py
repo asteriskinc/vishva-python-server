@@ -61,6 +61,8 @@ class Orcs:
             "tools": tools or None,
             "tool_choice": agent.tool_choice,
             "stream": stream,
+            "json_mode": agent.json_mode,
+            "json_schema": agent.json_schema,
         }
 
         if tools:

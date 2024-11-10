@@ -62,5 +62,5 @@ Consider factors like:
 Always include navigation agent for directions to recommended theater.
 Ensure your response is valid JSON matching this schema exactly.""",
     functions=[get_user_context, get_driving_directions],
-    model="gpt-4-0125-preview"
+    model="gpt-4o"
 )

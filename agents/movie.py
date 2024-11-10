@@ -77,5 +77,5 @@ Ensure your response is valid JSON matching this schema exactly.""",
         retrieve_url_content,
         transfer_to_theaters_agent
     ],
-    model="gpt-4-0125-preview"
+    model="gpt-4o"
 )

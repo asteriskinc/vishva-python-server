@@ -81,5 +81,5 @@ Ensure your response is valid JSON matching this schema exactly.""",
         transfer_to_movie_agent,
         transfer_to_navigation_agent
     ],
-    model="gpt-4-0125-preview"
+    model="gpt-4o"
 )

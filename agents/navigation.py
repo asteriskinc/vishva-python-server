@@ -124,5 +124,5 @@ Consider factors like:
 Navigation is typically the final agent in the chain.
 Ensure your response is valid JSON matching this schema exactly.""",
     functions=[get_distance, get_driving_directions, get_user_context],
-    model="gpt-4-0125-preview"
+    model="gpt-4o"
 )

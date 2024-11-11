@@ -303,6 +303,8 @@ class Orcs:
     ):
         """
         Generator version of the run method that yields each agent's output and state.
+        Continues running as long as there's an active agent, regardless of tool calls.
+        Only yields is_final=True when there are no more active agents or max_turns is reached.
         
         Yields:
             tuple: (active_agent, message, context_variables, is_final)
@@ -319,7 +321,6 @@ class Orcs:
 
         while turn_count < max_turns and active_agent:
             turn_count += 1
-
             # Get completion with current history, agent
             completion = self.get_chat_completion(
                 agent=active_agent,
@@ -338,11 +339,12 @@ class Orcs:
             message_dict = json.loads(message.model_dump_json())
             history.append(message_dict)
 
-            # If no tool calls or execute_tools is False, this is our final yield
-            if not message.tool_calls or not execute_tools:
-                debug_print(debug, "Ending turn.")
-                yield (active_agent, message_dict, context_variables, True)
-                break
+
+            if not message.tool_calls:
+                # No tool calls, but we still have an active agent - yield and continue
+                debug_print(debug, "No tool calls, continuing with current agent.")
+                yield (active_agent, message_dict, context_variables, False)
+                continue
 
             # Yield current state before processing tool calls
             yield (active_agent, message_dict, context_variables, False)
@@ -358,10 +360,15 @@ class Orcs:
             history.extend(partial_response.messages)
             context_variables.update(partial_response.context_variables)
             
-            # If we have a new agent, we'll continue with that in the next iteration
             if partial_response.agent:
+                # We have a new agent
                 active_agent = partial_response.agent
-            else:
-                # If no new agent and we've handled all tool calls, we're done
-                yield (active_agent, partial_response.messages, context_variables, True)
-                break
+                debug_print(debug, f"Switching to new agent: {active_agent.name}")
+            
+            # Yield the tool call results
+            yield (active_agent, partial_response.messages, context_variables, False)
+
+        # Only reach here if we've run out of turns or lost our active agent
+        debug_print(debug, "Generator ending: " + 
+                   ("max turns reached" if turn_count >= max_turns else "no active agent"))
+        yield (active_agent, message_dict, context_variables, True)

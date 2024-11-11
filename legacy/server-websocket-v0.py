@@ -9,6 +9,12 @@ from typing import Set
 import os
 from orcs import Orcs, Agent  # Import your agent system
 from dotenv import load_dotenv
+# Import everything needed from agents.py
+from agents import (
+    intent_agent, triage_agent, web_agent, movie_agent, directions_agent, personal_context_agent,
+    get_user_context, perform_web_search, retrieve_url_content, get_driving_directions
+)
+
 
 load_dotenv()
 
@@ -128,7 +134,7 @@ async def process_search_query(connection_id: str, query: str):
         
         # After generator completes, send task complete message
         await manager.send_message(connection_id, {
-            "type": "task_complete",
+            "type": "search_complete",
             "data": {},
             "timestamp": datetime.now().isoformat()
         })
@@ -142,7 +148,7 @@ async def process_search_query(connection_id: str, query: str):
         })
 
 
-def _get_starter_agent() -> Agent:
+def _get_starter_agent_template() -> Agent:
     agent_b = Agent(
         name="Agent B",
         instructions="Only speak in Haikus.",
@@ -158,6 +164,9 @@ def _get_starter_agent() -> Agent:
     )
 
     return agent_a
+
+def _get_starter_agent() -> Agent:
+    return intent_agent
 
 async def process_search_query_template(connection_id: str, query: str): 
     """Process search query using the agent system"""

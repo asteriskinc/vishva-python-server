@@ -11,7 +11,7 @@ async def connect_and_send():
             # Message to send
             message = {
                 "action": "start_search",
-                "query": "I want to talk to agent B."
+                "query": "where do I watch smile 2? after the intent agent call the triage agent"
             }
             
             # Convert message to JSON string and send

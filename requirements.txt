@@ -1,7 +1,9 @@
 fastapi
+colorama
 uvicorn
 websockets
 openai
 pydantic
 python-dotenv
 websockets
+googlesearch-python

@@ -12,6 +12,8 @@ import re
 from typing import Dict, Any, Optional, Tuple
 import os
 
+from agents_instructions import *
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -225,14 +227,10 @@ def transfer_to_directions_agent():
     return directions_agent
 
 # Define agents with enhanced capabilities
+# Define agents with enhanced capabilities
 triage_agent = Agent(
     name="Triage Agent",
-    instructions="""You are a triage agent. Your task is to determine which agent to transfer the user to:
-    - Web agent for general web searches
-    - Personal context agent for user-specific information
-    - Movie agent for movie-related queries and tickets
-    - Directions agent for navigation and travel queries
-    Based on the query, determine the most appropriate agent and transfer the user.""",
+    instructions=TRIAGE_INSTRUCTIONS,
     functions=[
         transfer_to_web_agent, 
         transfer_to_personal_context_agent, 
@@ -241,36 +239,21 @@ triage_agent = Agent(
     ],
 )
 
-# Intent Agent should understand the user's intent, breaks down the initial query into actionable sub tasks and passes that information on to the Triage Agent. 
 intent_agent = Agent(
     name="Intent Agent",
-    instructions="""You are an intent agent. Your tasks are to:
-    1. Determine the user's intent based on their query
-    2. Look at the user's personal context to include more details
-    3. Expand and clarify the user's query if needed
-    4. Breaks down the search query into action tasks for the Triage agent to delegate work for (State these out Clearly to the User). 
-    5. Immediately Transfer the user to the triage agent for appropriate routing
-    """,
+    instructions=INTENT_INSTRUCTIONS,
     functions=[get_user_context, transfer_back_to_triage],
 )
 
 web_agent = Agent(
     name="Web Agent",
-    instructions="""Search the web for information to answer the user's question. You can:
-    1. Search for URLs
-    2. Open and retrieve content from webpages
-    3. Transfer back to triage agent when done""",
+    instructions=WEB_INSTRUCTIONS,
     functions=[perform_web_search, retrieve_url_content, transfer_back_to_triage],
 )
 
 movie_agent = Agent(
     name="Movie Agent",
-    instructions="""You are a movie agent. Your tasks include:
-    1. Retrieving user movie preferences
-    2. Finding movie tickets and showtimes
-    3. Providing directions to theaters
-    4. Searching for movie-related information
-    Use the user's context to personalize recommendations.""",
+    instructions=MOVIE_INSTRUCTIONS,
     functions=[
         perform_web_search, 
         retrieve_url_content, 
@@ -282,12 +265,7 @@ movie_agent = Agent(
 
 directions_agent = Agent(
     name="Directions Agent",
-    instructions="""You are a directions agent specialized in navigation. Your tasks include:
-    1. Generating driving/walking/cycling directions between locations
-    2. Using user's context for default location and transport preferences
-    3. Providing clear, contextual navigation instructions
-    4. Handling various formats of location queries
-    Remember to consider the user's transportation preferences and current location.""",
+    instructions=DIRECTIONS_INSTRUCTIONS,
     functions=[
         get_driving_directions,
         get_user_context,
@@ -297,10 +275,6 @@ directions_agent = Agent(
 
 personal_context_agent = Agent(
     name="Personal Context Agent",
-    instructions="""You are a personal context agent. Your task is to:
-    1. Remember and retrieve information about user preferences
-    2. Track past interactions
-    3. Provide context to other agents
-    4. Transfer back to triage when appropriate""",
+    instructions=PERSONAL_CONTEXT_INSTRUCTIONS,
     functions=[get_user_context, transfer_back_to_triage],
 )

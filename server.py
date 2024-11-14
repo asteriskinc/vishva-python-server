@@ -6,7 +6,6 @@ import time
 from pydantic import BaseModel
 from orcs import Orcs
 
-# Import your agents and Orcs client
 from agents import intent_agent
 
 class AgentEvent(BaseModel):

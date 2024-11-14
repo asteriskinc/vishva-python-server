@@ -6,9 +6,8 @@ from typing import Dict, Any
 import colorama
 from colorama import Fore, Style
 import sys
-import aioconsole  # You might need to: pip install aioconsole
+import aioconsole
 
-# Initialize colorama for cross-platform colored output
 colorama.init()
 
 class AgentStreamViewer:
@@ -22,7 +21,6 @@ class AgentStreamViewer:
         
     def print_tool_call(self, agent: str, tool: str, args: Dict[str, Any]):
         print(f"{Fore.YELLOW}[{agent}] Calling: {tool}{Style.RESET_ALL}")
-        # print(f"{Fore.YELLOW}Arguments: {json.dumps(args, indent=2)}{Style.RESET_ALL}")
         
     def print_content(self, agent: str, content: str):
         if agent != self.current_agent:
@@ -33,9 +31,7 @@ class AgentStreamViewer:
         
     def handle_event(self, event: Dict[str, Any]):
         try:
-            timestamp = datetime.now().strftime('%H:%M:%S')
-            if 'timestamp' in event:
-                timestamp = datetime.fromtimestamp(event['timestamp']).strftime('%H:%M:%S')
+            timestamp = datetime.fromtimestamp(event.get('timestamp', datetime.now().timestamp())).strftime('%H:%M:%S')
             
             match event['type']:
                 case 'agent_start':
@@ -54,7 +50,7 @@ class AgentStreamViewer:
                         self.print_content(event['agent'], content)
                     
                 case 'tool_call':
-                    print()  # New line for better formatting
+                    print()
                     tool_data = event.get('data', {})
                     self.print_tool_call(
                         event['agent'],
@@ -64,7 +60,7 @@ class AgentStreamViewer:
                     
                 case 'agent_complete':
                     if self.current_content:
-                        print()  # New line after content
+                        print()
                     self.current_content = ""
                     print(f"\n{Fore.GREEN}[{timestamp}] {event['agent']} completed their task{Style.RESET_ALL}")
                     
@@ -74,13 +70,16 @@ class AgentStreamViewer:
                     if final_agent:
                         print(f"{Fore.BLUE}Final agent: {final_agent}{Style.RESET_ALL}")
                     self.conversation_in_progress = False
-                    print(f"\n{Fore.CYAN}Ready for next query...{Style.RESET_ALL}")
+                    print(f"\n{Fore.CYAN}Enter your next query or type 'clear' to start fresh...{Style.RESET_ALL}")
+                    
+                case 'info':
+                    print(f"\n{Fore.BLUE}[{timestamp}] {event.get('data', {}).get('message', '')}{Style.RESET_ALL}")
                     
                 case 'error':
                     error_msg = event.get('data', {}).get('message', 'Unknown error occurred')
                     print(f"\n{Fore.RED}[{timestamp}] Error: {error_msg}{Style.RESET_ALL}")
                     self.conversation_in_progress = False
-                    print(f"\n{Fore.CYAN}Ready for next query...{Style.RESET_ALL}")
+                    print(f"\n{Fore.CYAN}Enter your next query or type 'clear' to start fresh...{Style.RESET_ALL}")
                 
                 case _:
                     print(f"\n{Fore.YELLOW}[{timestamp}] Unknown event type: {event['type']}{Style.RESET_ALL}")
@@ -96,18 +95,27 @@ async def interactive_session():
     
     print(f"{Fore.CYAN}Starting ORCS Interactive Session{Style.RESET_ALL}")
     print(f"{Fore.CYAN}{'='*50}{Style.RESET_ALL}")
-    print(f"{Fore.CYAN}Type 'exit' to quit{Style.RESET_ALL}\n")
+    print(f"{Fore.CYAN}Commands:{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}- Type your query to chat{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}- Type 'clear' to start a fresh conversation{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}- Type 'exit' to quit{Style.RESET_ALL}\n")
     
     try:
         async with websockets.connect(uri) as websocket:
             while True:
                 if not viewer.conversation_in_progress:
-                    # Use aioconsole to get input asynchronously
                     query = await aioconsole.ainput(f"{Fore.CYAN}Enter your query: {Style.RESET_ALL}")
                     
                     if query.lower() in ['exit', 'quit', 'q']:
                         print(f"\n{Fore.YELLOW}Ending session...{Style.RESET_ALL}")
                         break
+                    
+                    if query.lower() == 'clear':
+                        message = {
+                            "action": "clear_history",
+                        }
+                        await websocket.send(json.dumps(message))
+                        continue
                     
                     if not query.strip():
                         continue

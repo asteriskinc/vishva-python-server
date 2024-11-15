@@ -1,6 +1,7 @@
 # agents.py
 
 from dotenv import load_dotenv
+from agent_schemas import MovieListResponse
 from orcs import Orcs, Agent
 from orcs.repl import run_demo_loop
 from googlesearch import search
@@ -261,6 +262,7 @@ movie_agent = Agent(
         get_driving_directions, 
         transfer_back_to_triage
     ],
+    response_format=MovieListResponse,
 )
 
 directions_agent = Agent(

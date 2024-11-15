@@ -65,7 +65,15 @@ class Orcs:
 
         if tools:
             create_params["parallel_tool_calls"] = agent.parallel_tool_calls
-
+        
+        # Use structured output if response_format is set and not streaming
+        if agent.response_format and not stream:
+            return self.client.beta.chat.completions.parse(
+                model=model_override or agent.model,
+                messages=messages,
+                response_format=agent.response_format
+            )
+        
         return self.client.chat.completions.create(**create_params)
 
     def handle_function_result(self, result, debug) -> Result:

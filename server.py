@@ -128,17 +128,21 @@ class OrcsWebSocketServer:
         }
 
         try:
-            response_stream = self.orcs_client.run(
+            structured_response = True
+            response = self.orcs_client.run(
                 agent=current_agent,
                 messages=messages,  # Now using full conversation history
                 context_variables={},
-                stream=True
+                stream=not structured_response
             )
+
+            if structured_response:
+                response = [response.messages[-1]]
 
             current_content = ""
             last_agent = current_agent.name
 
-            for chunk in response_stream:
+            for chunk in response:
                 timestamp = time.time()
 
                 if "sender" in chunk and chunk["sender"] != last_agent:

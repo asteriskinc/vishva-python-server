@@ -10,8 +10,6 @@ from datetime import datetime
 import traceback
 from enum import Enum
 
-from agents import intent_agent
-from agent_schemas import MovieListResponse
 from vishva.main_agents import PlannerAgent
 
 # Configure logging
@@ -167,44 +165,6 @@ class OrcsWebSocketServer:
                 "timestamp": time.time()
             }, websocket)
 
-    def parse_final_response(self, messages: list, agent_name: str) -> tuple[str, Dict[str, Any]]:
-        """
-        Parse the final response from the agent chain to determine the response type and structure.
-        Returns the response type as a string and the parsed data as a dict.
-        """
-        try:
-            final_message = messages[-1]
-            logger.info(f"Parsing final response from {agent_name}")
-            
-            if agent_name == "Movie Agent":
-                try:
-                    completion = self.orcs_client.client.beta.chat.completions.parse(
-                        model="gpt-4o-2024-08-06",
-                        messages=[
-                            {"role": "system", "content": "Extract the movie theaters and showtime information."},
-                            {"role": "user", "content": final_message["content"]}
-                        ],
-                        response_format=MovieListResponse,
-                    )
-                    
-                    theaters_data = completion.choices[0].message.parsed
-                    logger.info(f"Found theaters data: {theaters_data}")
-                    return ResponseType.THEATERS.value, {
-                        "theaters": [theater.model_dump() for theater in theaters_data.theaters],
-                        "count": len(theaters_data.theaters)
-                    }
-                except Exception as e:
-                    logger.warning(f"Failed to parse theater response: {e}")
-            
-            # Default to general response
-            return ResponseType.GENERAL.value, {
-                "message": final_message.content if hasattr(final_message, 'content') else str(final_message)
-            }
-            
-        except Exception as e:
-            logger.error(f"Error parsing final response: {e}")
-            return ResponseType.ERROR.value, {"error": str(e)}
-
     async def process_agent_conversation(self, current_agent, messages, websocket):
         timestamp = time.time()
         
@@ -297,17 +257,6 @@ class OrcsWebSocketServer:
                             yield event
                     else:
                         logger.info("Conversation complete, parsing final response")
-                        # response_type, parsed_response = self.parse_final_response(
-                        #     response.messages, 
-                        #     current_agent.name
-                        # )
-
-                        # yield {
-                        #     "type": "content",
-                        #     "agent": "Parser",
-                        #     "timestamp": timestamp,
-                        #     "data": {"content": parsed_response}
-                        # }
                         
                         # Yield response with parsed data in message
                         yield {

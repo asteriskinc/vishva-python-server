@@ -1,35 +1,34 @@
-# agents.py
-
-from dotenv import load_dotenv
-from agent_schemas import MovieListResponse
-from orcs import Orcs, Agent
-from orcs.repl import run_demo_loop
-from googlesearch import search
+# Definte various tools that can be used by the agents like web search, directions, etc.
 import requests
+from googlesearch import search
 from bs4 import BeautifulSoup
 import markdown
-import urllib.parse
+from typing import Optional, Tuple, Dict, Any
 import re
-from typing import Dict, Any, Optional, Tuple
+import urllib.parse
+from dotenv import load_dotenv
 import os
 
-from agents_instructions import *
-
-# Load environment variables from .env file
 load_dotenv()
-
-# Get API key from environment
 GOOGLE_MAPS_API_KEY = os.getenv('GOOGLE_MAPS_API_KEY')
 
-client = Orcs()
 
-def transfer_to_web_agent(query):
-    return web_agent
+# User Context Tools 
+def get_user_context():
+    return {
+        "user_preferences": "User likes to watch movies and TV shows.", 
+        "user_past_interactions": "User has watched the movie 'Inception' and liked it.",
+        "user_name": "Apekshik Panigrahi",
+        "user_age": 25,
+        "user_location": "Deus Ex Machina, Venice, CA",
+        "user_interests": "Traveling, Photography, Hiking",
+        "user_occupation": "Software Engineer",
+        "user_transportation": "Uses a Tesla Model 3",
+        "user_date": "2024-11-03"
+    }
 
-def transfer_back_to_triage():
-    """Call this function if a user is asking about a topic that is not handled by the current agent."""
-    return triage_agent
 
+# Web Search Tools 
 def perform_web_search(query):
     search_results = []
     try:
@@ -39,17 +38,8 @@ def perform_web_search(query):
         return {"results": search_results}
     except Exception as e:
         return {"error": f"Search failed: {str(e)}"}
-
-def retrieve_url_content(url):
-    """
-    Opens a URL and returns its content in markdown format.
     
-    Args:
-        url (str): The URL to open and parse
-        
-    Returns:
-        dict: Contains either the parsed content or an error message
-    """
+def retrieve_url_content(url):
     try:
         # Send GET request to the URL
         response = requests.get(url, timeout=10)
@@ -69,20 +59,9 @@ def retrieve_url_content(url):
     except Exception as e:
         return {"error": f"Failed to open URL: {str(e)}"}
     
-def get_user_context():
-    return {
-        "user_preferences": "User likes to watch movies and TV shows.", 
-        "user_past_interactions": "User has watched the movie 'Inception' and liked it.",
-        "user_name": "Apekshik Panigrahi",
-        "user_age": 25,
-        "user_location": "Deus Ex Machina, Venice, CA",
-        "user_interests": "Traveling, Photography, Hiking",
-        "user_occupation": "Software Engineer",
-        "user_transportation": "Uses a Tesla Model 3",
-        "user_date": "2024-11-03"
-    }
 
-def get_distance(origin: str, destination: str) -> Optional[Tuple[str, str]]:
+# Directions Tools 
+def get_distance_and_duration(origin: str, destination: str) -> Optional[Tuple[str, str]]:
     """
     Get distance and duration between two locations using Google Distance Matrix API.
     
@@ -118,6 +97,7 @@ def get_distance(origin: str, destination: str) -> Optional[Tuple[str, str]]:
     except Exception as e:
         print(f"Error getting distance: {str(e)}")
         return None
+
 
 def get_driving_directions(query: str) -> Dict[Any, Any]:
     """
@@ -164,7 +144,7 @@ def get_driving_directions(query: str) -> Dict[Any, Any]:
             origin = user_location
             
         # Get distance and duration
-        distance_info = get_distance(origin, destination)
+        distance_and_duration_info = get_distance_and_duration(origin, destination)
         
         # Encode locations for URL
         origin_encoded = urllib.parse.quote(origin)
@@ -200,8 +180,8 @@ def get_driving_directions(query: str) -> Dict[Any, Any]:
             }
         }
         
-        if distance_info:
-            distance, duration = distance_info
+        if distance_and_duration_info:
+            distance, duration = distance_and_duration_info
             response.update({
                 "distance": distance,
                 "duration": duration,
@@ -216,67 +196,3 @@ def get_driving_directions(query: str) -> Dict[Any, Any]:
         
     except Exception as e:
         return {"error": f"Failed to generate directions: {str(e)}"}
-
-
-def transfer_to_personal_context_agent():
-    return personal_context_agent
-
-def transfer_to_movie_agent():
-    return movie_agent
-
-def transfer_to_directions_agent():
-    return directions_agent
-
-# Define agents with enhanced capabilities
-# Define agents with enhanced capabilities
-triage_agent = Agent(
-    name="Triage Agent",
-    instructions=TRIAGE_INSTRUCTIONS,
-    functions=[
-        transfer_to_web_agent, 
-        transfer_to_personal_context_agent, 
-        transfer_to_movie_agent,
-        transfer_to_directions_agent
-    ],
-)
-
-intent_agent = Agent(
-    name="Intent Agent",
-    instructions=INTENT_INSTRUCTIONS,
-    functions=[get_user_context, transfer_back_to_triage],
-)
-
-web_agent = Agent(
-    name="Web Agent",
-    instructions=WEB_INSTRUCTIONS,
-    functions=[perform_web_search, retrieve_url_content, transfer_back_to_triage],
-)
-
-movie_agent = Agent(
-    name="Movie Agent",
-    instructions=MOVIE_INSTRUCTIONS,
-    functions=[
-        perform_web_search, 
-        retrieve_url_content, 
-        get_user_context, 
-        get_driving_directions, 
-        transfer_back_to_triage
-    ],
-    response_format=MovieListResponse,
-)
-
-directions_agent = Agent(
-    name="Directions Agent",
-    instructions=DIRECTIONS_INSTRUCTIONS,
-    functions=[
-        get_driving_directions,
-        get_user_context,
-        transfer_back_to_triage
-    ],
-)
-
-personal_context_agent = Agent(
-    name="Personal Context Agent",
-    instructions=PERSONAL_CONTEXT_INSTRUCTIONS,
-    functions=[get_user_context, transfer_back_to_triage],
-)

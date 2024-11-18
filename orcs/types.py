@@ -20,7 +20,6 @@ class Agent(BaseModel):
     parallel_tool_calls: bool = True
     response_format: Type[BaseModel] | None = None
 
-
 class Response(BaseModel):
     messages: List = []
     agent: Optional[Agent] = None

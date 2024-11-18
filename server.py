@@ -12,6 +12,7 @@ from enum import Enum
 
 from agents import intent_agent
 from agent_schemas import MovieListResponse
+from vishva.main_agents import PlannerAgent
 
 # Configure logging
 logger = logging.getLogger('orcs_server')
@@ -82,7 +83,7 @@ class OrcsWebSocketServer:
         async def websocket_endpoint(websocket: WebSocket):
             await self.manager.connect(websocket)
             try:
-                await self.handle_websocket(websocket)
+                await self.handle_websocket(websocket) 
             except WebSocketDisconnect:
                 print("Client disconnected")
             except Exception as e:
@@ -108,11 +109,31 @@ class OrcsWebSocketServer:
                     # Get existing conversation history or start new one
                     history = self.manager.conversation_history.get(websocket, [])
                     
+                    # If history is empty, add the user context as a system message
+                    if not history:
+                        user_context = {
+                            "user_preferences": "User likes to watch movies and TV shows.",
+                            "user_past_interactions": "User has watched the movie 'Inception' and liked it.",
+                            "user_name": "Apekshik Panigrahi",
+                            "user_age": 25,
+                            "user_location": "Deus Ex Machina, Venice, CA",
+                            "user_interests": "Traveling, Photography, Hiking",
+                            "user_occupation": "Software Engineer",
+                            "user_transportation": "Uses a Tesla Model 3",
+                            "user_date": "2024-11-03"
+                        }
+                        
+                        # Add user context as a system message at the start of conversation
+                        history.append({
+                            "role": "system",
+                            "content": f"User Context: {json.dumps(user_context, indent=2)}"
+                        })
+                        
                     # Add user's new query to history
                     history.append({"role": "user", "content": query})
                     
                     # Process the conversation with streaming
-                    async for event in self.process_agent_conversation(intent_agent, history, websocket):
+                    async for event in self.process_agent_conversation(PlannerAgent, history, websocket):
                         await self.manager.broadcast_event(event, websocket)
                         
                         # If this is a completion event, save the assistant's response
@@ -276,17 +297,17 @@ class OrcsWebSocketServer:
                             yield event
                     else:
                         logger.info("Conversation complete, parsing final response")
-                        response_type, parsed_response = self.parse_final_response(
-                            response.messages, 
-                            current_agent.name
-                        )
+                        # response_type, parsed_response = self.parse_final_response(
+                        #     response.messages, 
+                        #     current_agent.name
+                        # )
 
-                        yield {
-                            "type": "content",
-                            "agent": "Parser",
-                            "timestamp": timestamp,
-                            "data": {"content": parsed_response}
-                        }
+                        # yield {
+                        #     "type": "content",
+                        #     "agent": "Parser",
+                        #     "timestamp": timestamp,
+                        #     "data": {"content": parsed_response}
+                        # }
                         
                         # Yield response with parsed data in message
                         yield {

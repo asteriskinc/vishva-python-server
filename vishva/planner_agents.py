@@ -3,7 +3,14 @@ from typing import Any, Dict, List, Optional, Callable
 from typing_extensions import Literal
 from orcs.types import Agent
 from vishva.agent_instructions import *
-from vishva.executor_agents import DirectionsAgent, MovieAgent, WebSearchAgent
+from vishva.executor_agents import (
+    AccommodationAgent,
+    ActivityAgent,
+    DirectionsAgent,
+    FlightSearchAgent,
+    MovieAgent,
+    WebSearchAgent,
+)
 from dataclasses import dataclass
 
 
@@ -17,6 +24,9 @@ def transfer_to_planner_agent():
 
 def transfer_to_creator_agent():
     return CreatorAgent
+
+def transfer_to_starter_agent():
+    return StarterAgent
 
 
 def create_transfer_functions(agents: List[Agent]) -> List[Callable]:
@@ -45,12 +55,22 @@ def create_transfer_functions(agents: List[Agent]) -> List[Callable]:
         """
 
         transfer_functions.append(transfer_func)
+        transfer_functions.append(transfer_to_starter_agent)
 
     return transfer_functions
 
 
 def get_agents_for_execution(
-    agent_names: List[Literal["WebSearchAgent", "MovieAgent", "DirectionsAgent"]]
+    agent_names: List[
+        Literal[
+            "WebSearchAgent",
+            "MovieAgent",
+            "DirectionsAgent",
+            "FlightSearchAgent",
+            "AccommodationAgent",
+            "ActivityAgent",
+        ]
+    ]
 ) -> List[Agent]:
     """
     Takes a list of agent names and returns the corresponding agent objects.
@@ -65,6 +85,9 @@ def get_agents_for_execution(
         "WebSearchAgent": WebSearchAgent,
         "MovieAgent": MovieAgent,
         "DirectionsAgent": DirectionsAgent,
+        "FlightSearchAgent": FlightSearchAgent,
+        "AccommodationAgent": AccommodationAgent,
+        "ActivityAgent": ActivityAgent,
     }
 
     agents = []
@@ -150,10 +173,12 @@ PlannerAgent = Agent(
     name="Planner Agent",
     model="gpt-4o-mini",
     instructions=PLANNER_PLANNER_AGENT_INSTRUCTIONS,
+    functions=[transfer_to_starter_agent],
 )
 
 StarterAgent = Agent(
     name="Starter Agent",
     model="gpt-4o-mini",
     instructions=STARTER_AGENT_INSTRUCTIONS,
+    parallel_tool_calls=False,
 )

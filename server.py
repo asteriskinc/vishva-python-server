@@ -169,21 +169,25 @@ class OrcsWebSocketServer:
                                     "content": event["data"]["final_content"],
                                 }
                             )
-                            
-                            # Now process with StarterAgent
-                            async for starter_event in self.process_agent_conversation(
-                                StarterAgent, history, websocket
-                            ):
-                                await self.manager.broadcast_event(starter_event, websocket)
-                                
-                                # Save StarterAgent's response to history
-                                if starter_event["type"] == "agent_complete":
-                                    history.append(
-                                        {
-                                            "role": "assistant",
-                                            "content": starter_event["data"]["final_content"],
-                                        }
-                                    )
+
+                            # # Now process with StarterAgent
+                            # async for starter_event in self.process_agent_conversation(
+                            #     StarterAgent, history, websocket
+                            # ):
+                            #     await self.manager.broadcast_event(
+                            #         starter_event, websocket
+                            #     )
+
+                            #     # Save StarterAgent's response to history
+                            #     if starter_event["type"] == "agent_complete":
+                            #         history.append(
+                            #             {
+                            #                 "role": "assistant",
+                            #                 "content": starter_event["data"][
+                            #                     "final_content"
+                            #                 ],
+                            #             }
+                            #         )
 
                     # Update the conversation history after both agents are done
                     self.manager.conversation_history[websocket] = history

@@ -1,19 +1,21 @@
-# executor_agents.py contains all the mini agents that execute various tasks that they're designated by the Orchestrator or Planner Agents. 
+# executor_agents.py contains all the mini agents that execute various tasks that they're designated by the Orchestrator or Planner Agents.
 from orcs.types import Agent
-from vishva.agent_tools import * 
-from vishva.agent_instructions import * 
+from vishva.agent_tools import *
+from vishva.agent_instructions import *
 from vishva.commerce_tools import *
-
 
 
 def transfer_to_web_search_agent():
     return WebSearchAgent
 
+
 def transfer_to_movie_agent():
     return MovieAgent
 
+
 def transfer_to_directions_agent():
     return DirectionsAgent
+
 
 def transfer_to_commerce_agent():
     return CommerceAgent
@@ -52,6 +54,33 @@ CommerceAgent = Agent(
         transfer_to_directions_agent,
         retrieve_page_content,
         analyze_shopping_results,
-        compare_product_pages
+        compare_product_pages,
     ],
+)
+
+
+FlightSearchAgent = Agent(
+    name="Flight Search Agent",
+    model="gpt-4o",
+    instructions=FLIGHT_SEARCH_AGENT_INSTRUCTIONS,
+    functions=[perform_web_search, retrieve_url_content],
+    parallel_tool_calls=True,
+)
+
+
+AccommodationAgent = Agent(
+    name="Accommodation Agent",
+    model="gpt-4o",
+    instructions=ACCOMMODATION_AGENT_INSTRUCTIONS,
+    functions=[perform_web_search, retrieve_url_content],
+    parallel_tool_calls=True,
+)
+
+
+ActivityAgent = Agent(
+    name="Activity Agent",
+    model="gpt-4o",
+    instructions=ACTIVITY_AGENT_INSTRUCTIONS,
+    functions=[perform_web_search, retrieve_url_content],
+    parallel_tool_calls=True,
 )

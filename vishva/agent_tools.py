@@ -19,10 +19,10 @@ def get_user_context():
         "user_preferences": "User likes to watch movies and TV shows.", 
         "user_past_interactions": "User has watched the movie 'Inception' and liked it.",
         "user_name": "Apekshik Panigrahi",
-        "user_age": 25,
-        "user_location": "Deus Ex Machina, Venice, CA",
+        "user_age": 23,
+        "user_location": "220 Ventura Ave, Palo Alto, CA",
         "user_interests": "Traveling, Photography, Hiking",
-        "user_occupation": "Software Engineer",
+        "user_occupation": "AI Engineer",
         "user_transportation": "Uses a Tesla Model 3",
         "user_date": "2024-11-03"
     }
@@ -157,7 +157,7 @@ def get_driving_directions(query: str) -> Dict[Any, Any]:
         transport = user_context.get('user_transportation', '')
         if 'tesla' in transport.lower():
             maps_url += "/data=!4m2!4m1!3e0"  # Driving mode
-            transport_msg = "by car (Tesla)"
+            transport_msg = "by car"
         elif 'bike' in transport.lower():
             maps_url += "/data=!4m2!4m1!3e1"  # Bicycle mode
             transport_msg = "by bicycle"

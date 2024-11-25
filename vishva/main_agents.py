@@ -1,4 +1,4 @@
-# Extention of the Agent class to include planner agent functionality
+# main_agents.py contains the agents that manage every other agent. 
 from orcs.types import Agent
 from vishva.agent_tools import * 
 from vishva.executor_agents import * 
@@ -11,7 +11,7 @@ OrchestratorAgent = Agent(
     name="Orchestrator Agent",
     model="gpt-4o",
     instructions=ORCHESTRATOR_AGENT_INSTRUCTIONS_2,
-    functions=[transfer_to_web_search_agent, transfer_to_movie_agent, transfer_to_directions_agent],
+    functions=[transfer_to_web_search_agent, transfer_to_movie_agent, transfer_to_directions_agent, transfer_to_commerce_agent],
     parallel_tool_calls=True,
 )
 

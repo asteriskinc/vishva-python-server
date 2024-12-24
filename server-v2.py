@@ -122,7 +122,7 @@ async def process_query(request: QueryRequest):
         
         # Make the API call with structured output
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",

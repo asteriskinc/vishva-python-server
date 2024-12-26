@@ -1,13 +1,28 @@
 # orchestration_agents.py
-
-# This file will contain all the agents that will be used to orchestrate the tasks including the planner agent, and the dependency determination agent. 
-
-# The planner agent will be responsible for taking the user query and converting it into a task object. 
-# The dependency determination agent will be responsible for determining the dependencies between the subtasks and the task. 
-
-from typing import Type
+from typing import List, Optional
 from pydantic import BaseModel
-from .types import Agent, AgentTool
+from orcs_types import Agent
+
+# Define response format for Planner Agent
+class SubtaskSchema(BaseModel):
+    title: str
+    agent: str
+    detail: str
+    category: int  # 1: Direct necessary task, 2: Optional helpful task
+
+class PlannerResponse(BaseModel):
+    domain: str
+    needsClarification: bool
+    clarificationPrompt: Optional[str] = None
+    subtasks: List[SubtaskSchema]
+
+# Define response format for Dependency Agent
+class SubtaskDependency(BaseModel):
+    subtask_id: str
+    depends_on: Optional[str] = None  # ID of the subtask this depends on, if any
+
+class DependencyResponse(BaseModel):
+    subtask_dependencies: List[SubtaskDependency]
 
 # Define the Planner Agent
 PlannerAgent = Agent(
@@ -32,110 +47,29 @@ Available Agents and their capabilities:
 - Scheduling Agent: time-based tasks and scheduling
 - Navigation Agent: routing and transportation
 - Concierge Agent: recommendations and personalized suggestions""",
-    response_format={
-        "type": "json_schema",
-        "json_schema": {
-            "type": "object",
-            "properties": {
-                "domain": {
-                    "type": "string",
-                    "description": "Category of the task (e.g., Entertainment, Travel, Shopping)"
-                },
-                "needsClarification": {
-                    "type": "boolean",
-                    "description": "Whether clarification is needed from the user"
-                },
-                "clarificationPrompt": {
-                    "type": "string",
-                    "description": "Question to ask user for clarification if needed"
-                },
-                "subtasks": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "title": {
-                                "type": "string",
-                                "description": "Name of the subtask"
-                            },
-                            "agent": {
-                                "type": "string",
-                                "description": "Name of the agent to handle this task"
-                            },
-                            "detail": {
-                                "type": "string",
-                                "description": "Description of what will be done (in future tense)"
-                            },
-                            "category": {
-                                "type": "integer",
-                                "enum": [1, 2],
-                                "description": "1: Direct necessary task, 2: Optional helpful task"
-                            }
-                        },
-                        "required": ["title", "agent", "detail", "category"]
-                    }
-                }
-            },
-            "required": ["domain", "needsClarification", "subtasks"]
-        }
-    }
+    response_format=PlannerResponse
 )
 
 # Define the Dependency Determination Agent
 DependencyAgent = Agent(
     name="Dependency Agent",
     model="gpt-4o-mini",
-    instructions="""You are a dependency analysis agent that determines the relationships and dependencies between subtasks.
+    instructions="""You are a dependency analysis agent that determines the relationships between subtasks.
 
 Your role is to:
 1. Analyze the provided task and its subtasks
-2. Identify which subtasks depend on others
-3. Specify what data needs to be passed between dependent tasks
-4. Create a logical execution order
+2. For each subtask, determine if it depends on the completion of any other subtask
+3. Create a logical execution order
 
-Consider:
-- Which tasks must be completed before others can begin?
-- What specific data or information needs to flow between tasks?
-- Are there any parallel execution opportunities?
-- What's the critical path for task completion?
+For example:
+- If suggesting restaurants near a movie theater, that subtask would depend on the movie theater location being determined first
+- If booking a table at a restaurant, that would depend on the restaurant being selected first
+- If calculating travel time to a venue, that would depend on the venue being chosen first
 
-You will receive the complete task information including all subtasks and their details.
-You must determine the dependencies and specify what data fields are required between dependent tasks.""",
-    response_format={
-        "type": "json_schema",
-        "json_schema": {
-            "type": "object",
-            "properties": {
-                "dependencies": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "dependent_subtask_id": {
-                                "type": "string",
-                                "description": "ID of the subtask that depends on another"
-                            },
-                            "required_subtask_id": {
-                                "type": "string",
-                                "description": "ID of the subtask that must be completed first"
-                            },
-                            "required_data": {
-                                "type": "array",
-                                "items": {
-                                    "type": "string"
-                                },
-                                "description": "List of data fields that must be present in the required subtask's result"
-                            },
-                            "dependency_reason": {
-                                "type": "string",
-                                "description": "Explanation of why this dependency exists"
-                            }
-                        },
-                        "required": ["dependent_subtask_id", "required_subtask_id", "required_data"]
-                    }
-                }
-            },
-            "required": ["dependencies"]
-        }
-    }
+For each subtask, you should specify:
+- The subtask_id (provided in the input)
+- The ID of another subtask it depends on (if any), or null if it has no dependencies
+
+You will receive a list of subtasks with their IDs, titles, and details. Return a list of dependencies for each subtask.""",
+    response_format=DependencyResponse
 )

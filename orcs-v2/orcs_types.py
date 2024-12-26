@@ -1,6 +1,6 @@
-# orcs-v2/types.py
+# orcs-v2/orcs_types.py
 import json
-from typing import Callable, Type, Dict, Optional, List, Any
+from typing import Callable, Type, Dict, Optional, List, Any, Union
 from pydantic import BaseModel, Field
 from enum import Enum
 
@@ -15,7 +15,7 @@ class Agent(BaseModel):
     tools: Dict[str, AgentTool] = Field(default_factory=dict) # a dictionary of tool names and their corresponding functions
     tool_choice: Optional[str] | None = None # if not None, the agent will only use the tool with this name
     parallel_tool_calls: bool = True # if true, the agent will call tools in parallel
-    response_format: Type[BaseModel] | None = None # if not None, the agent will return a response in the format of the response_format
+    response_format: Union[Type[BaseModel], dict, None] = None  # if not None, the agent will return a response in the format of the response_format
 
 
 class TaskStatus(str, Enum):
@@ -42,6 +42,8 @@ class SubTask(BaseModel):
     task_id: str
     agent: Agent
     dependencies: List[TaskDependency] = Field(default_factory=list)
+    title: str
+    detail: str
     status: TaskStatus = TaskStatus.PENDING
     result: Optional[TaskResult] = None
     start_time: Optional[str] = None

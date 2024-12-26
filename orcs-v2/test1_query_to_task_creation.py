@@ -2,8 +2,8 @@
 import asyncio
 import os
 from dotenv import load_dotenv
-from orcs_types import Agent
 from core import ORCS
+from execution_agents import EXECUTION_AGENTS
 
 async def test_orcs():
     # Load environment variables
@@ -17,33 +17,7 @@ async def test_orcs():
         orcs = ORCS(api_key=api_key)
 
         # Initialize available agents
-        orcs.agents = {
-            "Location Agent": Agent(
-                name="Location Agent",
-                model="gpt-4o-mini",
-                instructions="You are a location-based search specialist."
-            ),
-            "Search Agent": Agent(
-                name="Search Agent",
-                model="gpt-4o-mini",
-                instructions="You are a web search and comparison specialist."
-            ),
-            "Scheduling Agent": Agent(
-                name="Scheduling Agent",
-                model="gpt-4o-mini",
-                instructions="You are a scheduling and time management specialist."
-            ),
-            "Navigation Agent": Agent(
-                name="Navigation Agent",
-                model="gpt-4o-mini",
-                instructions="You are a navigation and routing specialist."
-            ),
-            "Concierge Agent": Agent(
-                name="Concierge Agent",
-                model="gpt-4o-mini",
-                instructions="You are a recommendations and personalization specialist."
-            )
-        }
+        orcs.agents = EXECUTION_AGENTS
 
         # Test queries
         test_queries = [

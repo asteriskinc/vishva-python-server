@@ -27,7 +27,7 @@ class DependencyResponse(BaseModel):
 # Define the Planner Agent
 PlannerAgent = Agent(
     name="Planner Agent",
-    model="gpt-4o-mini",
+    model="gpt-4o",
     instructions="""You are a task planning assistant that breaks down user queries into actionable subtasks.
     
 Your role is to:

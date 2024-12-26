@@ -58,7 +58,7 @@ class SubTask(BaseModel):
             return True
         return all(
             dep.task_id in completed_tasks and
-            all(field in completed_tasks[dep.task_id].data for field in dep.required_data)
+            completed_tasks[dep.task_id].status == TaskStatus.COMPLETED
             for dep in self.dependencies
         )
     

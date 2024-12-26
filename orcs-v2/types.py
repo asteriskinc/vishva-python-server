@@ -17,48 +17,6 @@ class Agent(BaseModel):
     parallel_tool_calls: bool = True # if true, the agent will call tools in parallel
     response_format: Type[BaseModel] | None = None # if not None, the agent will return a response in the format of the response_format
 
-    def prepare_messages(self, input_data: dict) -> List[dict]:
-        """Prepare the messages for the API call."""
-        messages = [
-            {
-                "role": "system",
-                "content": self.instructions() if callable(self.instructions) else self.instructions
-            }
-        ]
-        messages.extend(self.conversation_history)
-        messages.append({
-            "role": "user",
-            "content": json.dumps(input_data)
-        })
-        return messages
-
-    def process_response(self, response: Any) -> dict: 
-        """Process the response from the API call."""
-        message = response.choices[0].message.content
-
-        # Handle tool calls if present 
-        if message.tool_calls: 
-            results = {}
-            for tool_call in message.tool_calls:
-                func_name = tool_call.function.name
-                if func_name in self.functions:
-                    args = json.loads(tool_call.function.arguments)
-                    results[func_name] = self.functions[func_name](args)
-            return results
-        
-        # Handle regular responses
-        if self.response_format:
-            return json.loads(message.content) 
-        
-        return {"response": message.content}
-    
-    def update_conversation_history(self, input_data: dict, result: dict):
-        """Update the conversation history with the new message."""
-        self.conversation_history.extend([
-            {"role": "user", "content": str(input_data)},
-            {"role": "assistant", "content": str(result)}
-        ])
-
 
 class TaskStatus(str, Enum):
     PENDING = "pending"

@@ -123,6 +123,78 @@ class ORCS:
                 dependencies.append(dependency)
 
         return dependencies
+    
+    def print_dependency_structure(self, task_id: str) -> None:
+        """
+        Print a hierarchical visualization of the dependency structure for a given task.
+        
+        Args:
+            task_id (str): The ID of the task to visualize
+        """
+        def get_dependent_tasks(subtask_id: str) -> List[str]:
+            """Get all subtasks that depend on the current subtask."""
+            dependents = []
+            for st in task.subtasks:
+                for dep in st.dependencies:
+                    if dep.task_id == subtask_id:
+                        dependents.append(st.subtask_id)
+            return dependents
+        
+        def print_subtask_tree(subtask_id: str, level: int = 0, visited: set = None):
+            """Recursively print the subtask tree."""
+            if visited is None:
+                visited = set()
+                
+            if subtask_id in visited:
+                return
+                
+            visited.add(subtask_id)
+            
+            # Find the actual subtask
+            subtask = next((st for st in task.subtasks if st.subtask_id == subtask_id), None)
+            if not subtask:
+                return
+            
+            # Print current subtask with proper indentation
+            prefix = "│   " * level
+            dependencies_str = ""
+            if subtask.dependencies:
+                deps = [f"{dep.task_id}" for dep in subtask.dependencies]
+                dependencies_str = f" (depends on: {', '.join(deps)})"
+                
+            print(f"{prefix}├── {subtask.title}{dependencies_str}")
+            print(f"{prefix}│   └── ID: {subtask.subtask_id}")
+            
+            # Print status if not pending
+            if subtask.status != TaskStatus.PENDING:
+                print(f"{prefix}│   └── Status: {subtask.status.value}")
+            
+            # Recursively print dependent tasks
+            dependent_tasks = get_dependent_tasks(subtask_id)
+            for dep_id in dependent_tasks:
+                print_subtask_tree(dep_id, level + 1, visited)
+
+        # Get the task
+        task = self.tasks.get(task_id)
+        if not task:
+            print(f"No task found with ID: {task_id}")
+            return
+        
+        print(f"\nDependency Structure for Task [{task_id}]:")
+        print("=======================================")
+        
+        # Find and print root tasks (those with no dependencies)
+        root_tasks = [st.subtask_id for st in task.subtasks if not st.dependencies]
+        
+        # If no root tasks found, print all tasks as they might be circular
+        if not root_tasks:
+            root_tasks = [task.subtasks[0].subtask_id] if task.subtasks else []
+            
+        # Print the tree starting from each root task
+        for root_id in root_tasks:
+            print_subtask_tree(root_id)
+        
+        print("=======================================\n")
 
     async def execute_task(self, task: Task) -> TaskResult:
         """

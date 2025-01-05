@@ -116,6 +116,9 @@ async def test_task_execution():
                 print(f"Task created in {creation_time:.2f} seconds")
                 print_task_creation_details(task)
 
+                # Viewing the dependency structure
+                orcs.print_dependency_structure(task.task_id)
+
                 # Step 2: Execute the task
                 print("\nStep 2: Executing Task...")
                 start_time = datetime.now()

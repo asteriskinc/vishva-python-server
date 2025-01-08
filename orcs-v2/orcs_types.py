@@ -4,6 +4,16 @@ from typing import Callable, Type, Dict, Optional, List, Any, Union
 from pydantic import BaseModel, Field
 from enum import Enum
 
+"""------------Dict Format for OpenAI Compatibility------------"""
+class DictList(BaseModel):
+    class Item(BaseModel):
+        key: str
+        value: str
+    items: List[Item]
+    
+    def to_dict(self):
+        return {item.key: item.value for item in self.items}
+
 """------------Our Core Classes and Types Here------------"""
 
 AgentTool = Callable[[], str]
@@ -12,11 +22,10 @@ class Agent(BaseModel):
     name: str = "Agent" 
     model: str = "gpt-4o-mini"
     instructions: str | Callable[[], str]= "You are a helpful assistant."
-    tools: Dict[str, AgentTool] = Field(default_factory=dict) # a dictionary of tool names and their corresponding functions
-    tool_choice: Optional[str] | None = None # if not None, the agent will only use the tool with this name
-    parallel_tool_calls: bool = True # if true, the agent will call tools in parallel
-    response_format: Union[Type[BaseModel], dict, None] = None  # if not None, the agent will return a response in the format of the response_format
-
+    tools: Dict[str, AgentTool] = Field(default_factory=dict)
+    tool_choice: Optional[str] | None = None
+    parallel_tool_calls: bool = True
+    response_format: Union[Type[BaseModel], dict, None] = None
 
 class TaskStatus(str, Enum):
     PENDING = "pending"
@@ -70,5 +79,3 @@ class Task(BaseModel):
     result: Optional[TaskResult] = None
     start_time: Optional[str] = None
     end_time: Optional[str] = None
-
-"""------------Our Core Classes End Here------------"""

@@ -1,13 +1,13 @@
 # execution_agents.py
 from pydantic import BaseModel
-from orcs_types import Agent
+from orcs_types import Agent, DictList
 
 # Response schemas for different agent types
 class LocationInfo(BaseModel):
     address: str
-    coordinates: dict[str, float]
+    coordinates: DictList
     place_id: str
-    additional_info: dict[str, str]
+    additional_info: DictList
 
 class LocationResponse(BaseModel):
     locations: list[LocationInfo]
@@ -45,7 +45,7 @@ class NavigationStep(BaseModel):
     distance: float
     duration: float
     mode: str
-    additional_info: dict[str, str]
+    additional_info: DictList
 
 class NavigationResponse(BaseModel):
     steps: list[NavigationStep]
@@ -63,11 +63,11 @@ class Recommendation(BaseModel):
     description: str
     location: str
     availability: str
-    additional_info: dict[str, str]
+    additional_info: DictList
 
 class ConciergeResponse(BaseModel):
     recommendations: list[Recommendation]
-    search_criteria: dict[str, str]
+    search_criteria: DictList
     total_options: int
 
 # Define the Location Agent

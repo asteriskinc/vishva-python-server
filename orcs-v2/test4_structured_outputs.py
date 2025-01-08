@@ -1,6 +1,6 @@
 # test_response_format.py
-from pydantic import BaseModel, Field
-from typing import List, Dict
+from pydantic import BaseModel
+from typing import List, Dict  # Note: Using typing module's List and Dict
 from orcs_types import Agent
 import asyncio
 from openai import AsyncOpenAI
@@ -10,18 +10,18 @@ from dotenv import load_dotenv
 # Simplified response format for testing
 class SimpleRecommendation(BaseModel):
     title: str
-    description: str = Field(default="")
-    rating: float = Field(default=0.0)
+    description: str 
+    rating: float
 
 class SimpleConciergeResponse(BaseModel):
-    recommendations: List[SimpleRecommendation]
-    search_criteria: Dict[str, str] = Field(default_factory=dict)
+    recommendations: List[SimpleRecommendation]  # Changed to capital List
+    search_criteria: dict[str, str]              # Changed to capital Dict
     total_options: int
 
 # Define a simple test agent
 TestAgent = Agent(
     name="Test Concierge",
-    model="gpt-4o-mini",
+    model="gpt-4o-mini-2024-07-18",
     instructions="""You are a simple recommendation agent. Your task is to:
 1. Provide basic restaurant recommendations
 2. Include title and ratings
@@ -30,16 +30,13 @@ TestAgent = Agent(
 )
 
 async def test_agent_response():
-    # Load environment variables
     load_dotenv()
     api_key = os.getenv('OPENAI_API_KEY')
     if not api_key:
         raise ValueError("OpenAI API key not found")
 
-    # Initialize OpenAI client
     client = AsyncOpenAI(api_key=api_key)
     
-    # Test query
     input_data = {
         "request": "Find a nice restaurant",
         "preferences": {

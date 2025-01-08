@@ -200,55 +200,32 @@ class ORCS:
         """
         Execute a complete task by managing subtasks completions according to their dependencies.
         """
-        print(f"\n{'='*50}")
-        print(f"Starting execution of task: {task.task_id}")
-        print(f"Total subtasks to complete: {len(task.subtasks)}")
-        print(f"{'='*50}")
+        print(f"\nExecuting task with {len(task.subtasks)} subtasks...")
         
         # Start the task
         task.status = TaskStatus.IN_PROGRESS
         task.start_time = datetime.now().isoformat()
-        print(f"Task started at: {task.start_time}")
         
-        completed_subtasks: List[SubTask] = []
-        execution_round = 1
-        
+        completed_subtasks: List[SubTask] = [] 
         while len(completed_subtasks) < len(task.subtasks):
-            print(f"\n{'.'*40}")
-            print(f"Execution Round {execution_round}")
-            print(f"Completed tasks so far: {len(completed_subtasks)}/{len(task.subtasks)}")
-            
             # gather all pending subtasks that can be executed
             pending_subtasks = [
                 subtask for subtask in task.subtasks 
                 if subtask.status == TaskStatus.PENDING and subtask.can_execute(self.completed_results)
             ]
             
-            print(f"\nFound {len(pending_subtasks)} subtasks ready for execution:")
-            for subtask in pending_subtasks:
-                deps = [dep.task_id for dep in subtask.dependencies]
-                print(f"- {subtask.title} (ID: {subtask.subtask_id})")
-                print(f"  Dependencies: {deps if deps else 'None'}")
-            
             if not pending_subtasks:
-                print("\nWARNING: No pending subtasks found that can be executed!")
-                print("Current task status:")
-                for subtask in task.subtasks:
-                    print(f"- {subtask.title}: {subtask.status}")
-                    if subtask.status == TaskStatus.PENDING:
-                        print("  Dependencies status:")
-                        for dep in subtask.dependencies:
-                            dep_completed = dep.task_id in self.completed_results
-                            print(f"    - {dep.task_id}: {'Completed' if dep_completed else 'Pending'}")
                 break
             
-            # execute all pending subtasks in parallel using asyncio
-            print("\nExecuting subtasks in parallel...")
-            tasks = [self.execute_subtask(subtask) for subtask in pending_subtasks]
+            # Show which subtasks are being executed
+            print(f"\nStarting {len(pending_subtasks)} subtasks:")
+            for subtask in pending_subtasks:
+                print(f"- {subtask.title}")
             
+            # execute all pending subtasks in parallel using asyncio
             try:
+                tasks = [self.execute_subtask(subtask) for subtask in pending_subtasks]
                 results = await asyncio.gather(*tasks)
-                print(f"Successfully executed {len(results)} subtasks")
                 
                 # update subtasks and completed results
                 for subtask, result in zip(pending_subtasks, results):
@@ -256,31 +233,17 @@ class ORCS:
                     self.completed_results[subtask.subtask_id] = result
                     subtask.status = TaskStatus.COMPLETED
                     subtask.end_time = result.timestamp
-                    
-                    print(f"\nSubtask completed: {subtask.title}")
-                    print(f"Execution time: {subtask.start_time} -> {subtask.end_time}")
-                    print(f"Result message: {result.message}")
+                    print(f"✓ Completed: {subtask.title}")
             
             except Exception as e:
-                print(f"\nERROR during parallel execution:")
-                print(f"Error type: {type(e).__name__}")
-                print(f"Error message: {str(e)}")
+                print(f"\nError executing subtasks: {str(e)}")
                 raise
-            
-            execution_round += 1
         
         # task is complete
         task.status = TaskStatus.COMPLETED
         task.end_time = datetime.now().isoformat()
         
-        print(f"\n{'='*50}")
-        print(f"Task {task.task_id} completed")
-        print(f"Total execution rounds: {execution_round - 1}")
-        print(f"Start time: {task.start_time}")
-        print(f"End time: {task.end_time}")
-        print(f"Total subtasks completed: {len(completed_subtasks)}/{len(task.subtasks)}")
-        print(f"{'='*50}\n")
-        
+        print(f"\nTask completed ({len(completed_subtasks)}/{len(task.subtasks)} subtasks)")
         return TaskResult(
             status=TaskStatus.COMPLETED,
             data={"completed_subtasks": completed_subtasks},
@@ -292,13 +255,8 @@ class ORCS:
         """
         Execute a single subtask using its assigned agent.
         """
-        print(f"\nExecuting subtask: {subtask.title}")
-        print(f"Subtask ID: {subtask.subtask_id}")
-        print(f"Agent: {subtask.agent.name}")
-        
         subtask.status = TaskStatus.IN_PROGRESS
         subtask.start_time = datetime.now().isoformat()
-        print(f"Start time: {subtask.start_time}")
 
         # Get the agent assigned to this subtask
         agent: Agent = subtask.agent
@@ -309,7 +267,6 @@ class ORCS:
             "task_id": subtask.task_id,
             "instructions": subtask.detail,
             "title": subtask.title,
-            # include all previous subtask results
             "previous_results": [
                 self.completed_results[dep.subtask_id].dict() 
                 for dep in subtask.dependencies 
@@ -317,14 +274,8 @@ class ORCS:
             ],
         }
         
-        print("\nPrepared input data:")
-        print(f"- Title: {input_data['title']}")
-        print(f"- Instructions: {input_data['instructions']}")
-        print(f"- Number of previous results: {len(input_data['previous_results'])}")
-        
         try:
             # Run the agent
-            print("\nRunning agent completion...")
             completion = await self.client.beta.chat.completions.parse(
                 model=agent.model,
                 messages=[
@@ -342,27 +293,15 @@ class ORCS:
             
             # Get the parsed response
             agent_output = completion.choices[0].message.parsed
-            print("Successfully received agent response")
             
             # Store the result
-            result = TaskResult(
+            return TaskResult(
                 status=TaskStatus.COMPLETED,
                 data=agent_output.dict(),
                 message=f"Successfully executed {agent.name} for subtask: {subtask.title}",
                 timestamp=datetime.now().isoformat()
             )
             
-            print(f"\nSubtask execution completed:")
-            print(f"- Status: {result.status}")
-            print(f"- Message: {result.message}")
-            print(f"- Timestamp: {result.timestamp}")
-            
-            return result
-            
         except Exception as e:
-            print(f"\nERROR during subtask execution:")
-            print(f"Error type: {type(e).__name__}")
-            print(f"Error message: {str(e)}")
-            print(f"Subtask: {subtask.title}")
-            print(f"Agent: {agent.name}")
+            print(f"Error in subtask '{subtask.title}': {str(e)}")
             raise

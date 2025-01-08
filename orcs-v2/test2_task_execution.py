@@ -29,7 +29,7 @@ def print_task_creation_details(task):
                 dependent_title = dependent_task.title if dependent_task else "Unknown Task"
                 print(f"    - Depends on: {dependent_title}")
 
-def print_execution_results(result, task):
+def print_execution_results(result, task, completed_results):
     """Helper function to print execution results"""
     print("\nExecution Results:")
     print(f"Final Status: {result.status}")
@@ -39,7 +39,7 @@ def print_execution_results(result, task):
     if result.status == TaskStatus.COMPLETED and "completed_subtasks" in result.data:
         print("\nSubtask Results:")
         for subtask in task.subtasks:
-            subtask_result = task.tasks[subtask.subtask_id]
+            subtask_result = completed_results.get(subtask.subtask_id)
             if subtask_result:
                 print(f"\n- {subtask.title}:")
                 print(f"  Status: {subtask_result.status}")
@@ -126,7 +126,7 @@ async def test_task_execution():
                 execution_time = (datetime.now() - start_time).total_seconds()
                 
                 print(f"Task executed in {execution_time:.2f} seconds")
-                print_execution_results(result, task)
+                print_execution_results(result, task, orcs.completed_results)
 
             except Exception as e:
                 print(f"\nError processing query '{query}':")

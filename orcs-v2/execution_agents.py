@@ -1,19 +1,17 @@
-# orcs-v2/execution_agents.py
-# NOTE: This is a placeholder file for the execution agents. We'll add proper agents soon. 
-from typing import List, Optional, Dict
+# execution_agents.py
 from pydantic import BaseModel
 from orcs_types import Agent
 
 # Response schemas for different agent types
 class LocationInfo(BaseModel):
     address: str
-    coordinates: Dict[str, float]
-    place_id: Optional[str] = None
-    additional_info: Optional[Dict[str, str]] = None
+    coordinates: dict[str, float]
+    place_id: str
+    additional_info: dict[str, str]
 
 class LocationResponse(BaseModel):
-    locations: List[LocationInfo]
-    search_radius: Optional[float] = None
+    locations: list[LocationInfo]
+    search_radius: float
     search_query: str
 
 class SearchResult(BaseModel):
@@ -25,32 +23,32 @@ class SearchResult(BaseModel):
     relevance_score: float
 
 class SearchResponse(BaseModel):
-    results: List[SearchResult]
+    results: list[SearchResult]
     query: str
     total_results: int
-    filtered_results: Optional[int] = None
+    filtered_results: int
 
 class Schedule(BaseModel):
     event_time: str
-    duration: Optional[int] = None  # in minutes
-    location: Optional[str] = None
-    participants: Optional[List[str]] = None
-    notes: Optional[str] = None
+    duration: int
+    location: str
+    participants: list[str]
+    notes: str
 
 class SchedulingResponse(BaseModel):
     schedule: Schedule
-    alternatives: Optional[List[Schedule]] = None
-    conflicts: Optional[List[str]] = None
+    alternatives: list[Schedule]
+    conflicts: list[str]
 
 class NavigationStep(BaseModel):
     instruction: str
     distance: float
     duration: float
     mode: str
-    additional_info: Optional[Dict[str, str]] = None
+    additional_info: dict[str, str]
 
 class NavigationResponse(BaseModel):
-    steps: List[NavigationStep]
+    steps: list[NavigationStep]
     total_distance: float
     total_duration: float
     start_location: str
@@ -61,21 +59,21 @@ class Recommendation(BaseModel):
     title: str
     category: str
     rating: float
-    price_range: Optional[str] = None
+    price_range: str
     description: str
-    location: Optional[str] = None
-    availability: Optional[str] = None
-    additional_info: Optional[Dict[str, str]] = None
+    location: str
+    availability: str
+    additional_info: dict[str, str]
 
 class ConciergeResponse(BaseModel):
-    recommendations: List[Recommendation]
-    search_criteria: Dict[str, str]
+    recommendations: list[Recommendation]
+    search_criteria: dict[str, str]
     total_options: int
 
 # Define the Location Agent
 LocationAgent = Agent(
     name="Location Agent",
-    model="gpt-4o-mini",
+    model="gpt-4o-mini-2024-07-18",
     instructions="""You are a location-based search specialist. Your role is to:
 1. Process location-related queries accurately
 2. Find and validate physical locations
@@ -94,7 +92,7 @@ Always provide:
 # Define the Search Agent
 SearchAgent = Agent(
     name="Search Agent",
-    model="gpt-4o-mini",
+    model="gpt-4o-mini-2024-07-18",
     instructions="""You are a web search and comparison specialist. Your role is to:
 1. Execute detailed web searches based on user queries
 2. Filter and rank results by relevance
@@ -114,7 +112,7 @@ For each search result, include:
 # Define the Scheduling Agent
 SchedulingAgent = Agent(
     name="Scheduling Agent",
-    model="gpt-4o-mini",
+    model="gpt-4o-mini-2024-07-18",
     instructions="""You are a scheduling and time management specialist. Your role is to:
 1. Process time-based requests and scheduling needs
 2. Check availability and conflicts
@@ -134,7 +132,7 @@ For each scheduling task:
 # Define the Navigation Agent
 NavigationAgent = Agent(
     name="Navigation Agent",
-    model="gpt-4o-mini",
+    model="gpt-4o-mini-2024-07-18",
     instructions="""You are a navigation and routing specialist. Your role is to:
 1. Plan optimal routes between locations
 2. Consider multiple transportation modes
@@ -154,7 +152,7 @@ For each navigation request:
 # Define the Concierge Agent
 ConciergeAgent = Agent(
     name="Concierge Agent",
-    model="gpt-4o-mini",
+    model="gpt-4o-mini-2024-07-18",
     instructions="""You are a recommendations and personalization specialist. Your role is to:
 1. Understand user preferences and requirements
 2. Provide tailored recommendations

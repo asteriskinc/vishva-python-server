@@ -1,5 +1,4 @@
 # orchestration_agents.py
-from typing import List, Optional
 from pydantic import BaseModel
 from orcs_types import Agent
 
@@ -13,21 +12,21 @@ class SubtaskSchema(BaseModel):
 class PlannerResponse(BaseModel):
     domain: str
     needsClarification: bool
-    clarificationPrompt: Optional[str] = None
-    subtasks: List[SubtaskSchema]
+    clarificationPrompt: str
+    subtasks: list[SubtaskSchema]
 
 # Define response format for Dependency Agent
 class SubtaskDependency(BaseModel):
     subtask_id: str
-    depends_on: Optional[str] = None  # ID of the subtask this depends on, if any
+    depends_on: str  # ID of the subtask this depends on
 
 class DependencyResponse(BaseModel):
-    subtask_dependencies: List[SubtaskDependency]
+    subtask_dependencies: list[SubtaskDependency]
 
 # Define the Planner Agent
 PlannerAgent = Agent(
     name="Planner Agent",
-    model="gpt-4o",
+    model="gpt-4o-mini-2024-07-18",
     instructions="""You are a task planning assistant that breaks down user queries into actionable subtasks.
     
 Your role is to:
@@ -53,7 +52,7 @@ Available Agents and their capabilities:
 # Define the Dependency Determination Agent
 DependencyAgent = Agent(
     name="Dependency Agent",
-    model="gpt-4o-mini",
+    model="gpt-4o-mini-2024-07-18",
     instructions="""You are a dependency analysis agent that determines the relationships between subtasks.
 
 Your role is to:
@@ -68,7 +67,7 @@ For example:
 
 For each subtask, you should specify:
 - The subtask_id (provided in the input)
-- The ID of another subtask it depends on (if any), or null if it has no dependencies
+- The ID of another subtask it depends on (if any)
 
 You will receive a list of subtasks with their IDs, titles, and details. Return a list of dependencies for each subtask.""",
     response_format=DependencyResponse

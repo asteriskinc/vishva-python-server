@@ -1,6 +1,6 @@
 # orchestration_agents.py
 from pydantic import BaseModel
-from orcs_types import Agent
+from .orcs_types import Agent
 
 # Define response format for Planner Agent
 class SubtaskSchema(BaseModel):

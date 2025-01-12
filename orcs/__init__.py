@@ -1,4 +1,18 @@
-from .core import Orcs
-from .types import Agent, Result, Response, AgentFunction
-from .repl import run_demo_loop
+# orcs/__init__.py
+from .core import ORCS
+from .execution_agents import EXECUTION_AGENTS
+from .orchestration_agents import PlannerAgent, DependencyAgent
+from .orcs_types import Task, SubTask, TaskResult, TaskStatus, Agent, TaskDependency
 
+__all__ = [
+    'ORCS',
+    'EXECUTION_AGENTS',
+    'PlannerAgent',
+    'DependencyAgent',
+    'Task',
+    'SubTask',
+    'TaskResult',
+    'TaskStatus',
+    'Agent',
+    'TaskDependency'
+]

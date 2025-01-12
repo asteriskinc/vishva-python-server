@@ -1,0 +1,348 @@
+python3 orcs-v2/test2_task_execution.py
+
+================================================================================
+Testing Query: Find an Italian restaurant near Central Park for tonight
+================================================================================
+
+Step 1: Creating Task...
+Task created in 2.80 seconds
+
+Task Creation Details:
+Task ID: 522cb996-c57f-4fb5-941a-60ec014a86a5
+Initial Status: TaskStatus.PENDING
+Creation Time: 2025-01-07T21:46:39.101355
+
+Planned Subtasks:
+
+- Search for Italian restaurants near Central Park
+  Agent: Location Agent
+  Detail: Locate Italian restaurants that are close to Central Park for dinner tonight.
+
+- Check availability and make a reservation if needed
+  Agent: Search Agent
+  Detail: Find out if the selected Italian restaurants have availability for tonight and make a reservation if possible.
+  Dependencies:
+    - Depends on: Search for Italian restaurants near Central Park
+
+Dependency Structure for Task [522cb996-c57f-4fb5-941a-60ec014a86a5]:
+=======================================
+├── Search for Italian restaurants near Central Park
+│   └── ID: 522cb996-c57f-4fb5-941a-60ec014a86a5_sub_0
+│   ├── Check availability and make a reservation if needed (depends on: 522cb996-c57f-4fb5-941a-60ec014a86a5_sub_0)
+│   │   └── ID: 522cb996-c57f-4fb5-941a-60ec014a86a5_sub_1
+=======================================
+
+
+Step 2: Executing Task...
+
+Executing task with 2 subtasks...
+
+Starting 1 subtasks:
+- Search for Italian restaurants near Central Park
+✓ Completed: Search for Italian restaurants near Central Park
+
+Starting 1 subtasks:
+- Check availability and make a reservation if needed
+✓ Completed: Check availability and make a reservation if needed
+
+Task completed (2/2 subtasks)
+Task executed in 8.80 seconds
+
+Execution Results:
+Final Status: TaskStatus.COMPLETED
+Execution Message: Task completed with 2 subtasks
+Completion Time: 2025-01-07T21:46:49.241491
+
+Subtask Results:
+
+- Search for Italian restaurants near Central Park:
+  Status: TaskStatus.COMPLETED
+  Execution Time: 2025-01-07T21:46:45.256077
+  Result Data:
+    - 44 W 63rd St, New York, NY 10023
+      Additional Info: {'items': [{'key': 'Cuisine', 'value': 'Italian'}, {'key': 'Rating', 'value': '4.5 stars'}, {'key': 'Distance from Central Park', 'value': '0.5 miles'}]}
+    - 2 E 67th St, New York, NY 10065
+      Additional Info: {'items': [{'key': 'Cuisine', 'value': 'Italian'}, {'key': 'Rating', 'value': '4 stars'}, {'key': 'Distance from Central Park', 'value': '0.4 miles'}]}
+    - 355 W 46th St, New York, NY 10036
+      Additional Info: {'items': [{'key': 'Cuisine', 'value': 'Italian'}, {'key': 'Rating', 'value': '4.2 stars'}, {'key': 'Distance from Central Park', 'value': '1.2 miles'}]}
+    - 238 E 56th St, New York, NY 10022
+      Additional Info: {'items': [{'key': 'Cuisine', 'value': 'Italian'}, {'key': 'Rating', 'value': '4.0 stars'}, {'key': 'Distance from Central Park', 'value': '0.9 miles'}]}
+    - 453 W 17th St, New York, NY 10011
+      Additional Info: {'items': [{'key': 'Cuisine', 'value': 'Italian'}, {'key': 'Rating', 'value': '4.1 stars'}, {'key': 'Distance from Central Park', 'value': '1.5 miles'}]}
+
+- Check availability and make a reservation if needed:
+  Status: TaskStatus.COMPLETED
+  Execution Time: 2025-01-07T21:46:49.241191
+  Result Data:
+    Found 5 results
+    - Trattoria Da Enzo al 29
+      Relevance: 9.5
+    - Osteria Francescana
+      Relevance: 8.5
+    - Ristorante Il Vero
+      Relevance: 9.0
+
+================================================================================
+Testing Query: Plan a movie night with dinner for 4 people this Saturday
+================================================================================
+
+Step 1: Creating Task...
+Task created in 4.21 seconds
+
+Task Creation Details:
+Task ID: 7bf368da-0e64-437a-8d07-044033db664d
+Initial Status: TaskStatus.PENDING
+Creation Time: 2025-01-07T21:46:51.309574
+
+Planned Subtasks:
+
+- Choose a Movie
+  Agent: Search Agent
+  Detail: Search for popular movies available for streaming or rent that are suitable for a group of 4.
+
+- Select a Dinner Option
+  Agent: Concierge Agent
+  Detail: Provide recommendations for dinner options (takeout or recipes) that can feed 4 people, considering dietary preferences.
+
+- Schedule the Movie Night
+  Agent: Scheduling Agent
+  Detail: Set a time for the movie night on Saturday, including dinner and movie start times.
+  Dependencies:
+    - Depends on: Choose a Movie
+
+- Arrange Dinner Delivery or Preparation
+  Agent: Scheduling Agent
+  Detail: If opting for takeout, place an order for delivery or pickup; or if cooking, create a prep timeline.
+  Dependencies:
+    - Depends on: Select a Dinner Option
+
+- Set Up Viewing Area
+  Agent: Concierge Agent
+  Detail: Provide suggestions for setting up a comfortable viewing area (lighting, seating, and sound setup).
+
+Dependency Structure for Task [7bf368da-0e64-437a-8d07-044033db664d]:
+=======================================
+├── Choose a Movie
+│   └── ID: 7bf368da-0e64-437a-8d07-044033db664d_sub_0
+│   ├── Schedule the Movie Night (depends on: 7bf368da-0e64-437a-8d07-044033db664d_sub_0)
+│   │   └── ID: 7bf368da-0e64-437a-8d07-044033db664d_sub_2
+├── Select a Dinner Option
+│   └── ID: 7bf368da-0e64-437a-8d07-044033db664d_sub_1
+│   ├── Arrange Dinner Delivery or Preparation (depends on: 7bf368da-0e64-437a-8d07-044033db664d_sub_1)
+│   │   └── ID: 7bf368da-0e64-437a-8d07-044033db664d_sub_3
+├── Set Up Viewing Area
+│   └── ID: 7bf368da-0e64-437a-8d07-044033db664d_sub_4
+=======================================
+
+
+Step 2: Executing Task...
+
+Executing task with 5 subtasks...
+
+Starting 3 subtasks:
+- Choose a Movie
+- Select a Dinner Option
+- Set Up Viewing Area
+✓ Completed: Choose a Movie
+✓ Completed: Select a Dinner Option
+✓ Completed: Set Up Viewing Area
+
+Starting 2 subtasks:
+- Schedule the Movie Night
+- Arrange Dinner Delivery or Preparation
+✓ Completed: Schedule the Movie Night
+✓ Completed: Arrange Dinner Delivery or Preparation
+
+Task completed (5/5 subtasks)
+Task executed in 7.89 seconds
+
+Execution Results:
+Final Status: TaskStatus.COMPLETED
+Execution Message: Task completed with 5 subtasks
+Completion Time: 2025-01-07T21:47:01.339019
+
+Subtask Results:
+
+- Choose a Movie:
+  Status: TaskStatus.COMPLETED
+  Execution Time: 2025-01-07T21:46:58.811396
+  Result Data:
+    Found 5 results
+    - The Suicide Squad (2021)
+      Relevance: 9.5
+    - Free Guy (2021)
+      Relevance: 9.0
+    - Dune (2021)
+      Relevance: 8.7
+
+- Select a Dinner Option:
+  Status: TaskStatus.COMPLETED
+  Execution Time: 2025-01-07T21:46:58.454971
+  Result Data:
+    - Vegetarian Stir-Fry
+      Rating: 4.5
+      Price: $15-$20
+    - Chicken Tikka Masala
+      Rating: 4.8
+      Price: $40-$50
+    - Vegan Buddha Bowl
+      Rating: 4.6
+      Price: $10-$15
+
+- Schedule the Movie Night:
+  Status: TaskStatus.COMPLETED
+  Execution Time: 2025-01-07T21:47:01.126039
+  Result Data:
+    Time: 2023-10-21T18:00:00
+    Duration: 240 minutes
+
+- Arrange Dinner Delivery or Preparation:
+  Status: TaskStatus.COMPLETED
+  Execution Time: 2025-01-07T21:47:01.338728
+  Result Data:
+    Time: 2023-10-14T19:00:00
+    Duration: 60 minutes
+
+- Set Up Viewing Area:
+  Status: TaskStatus.COMPLETED
+  Execution Time: 2025-01-07T21:46:58.896623
+  Result Data:
+    - Cozy Movie Nook
+      Rating: 4.8
+      Price: $300 - $800
+    - Theater-Like Experience
+      Rating: 4.5
+      Price: $1,000 - $2,500
+    - Outdoor Viewing Area
+      Rating: 4.7
+      Price: $200 - $1,000
+
+================================================================================
+Testing Query: Organize a birthday dinner party for 8 people at a nice restaurant next week
+================================================================================
+
+Step 1: Creating Task...
+Task created in 4.42 seconds
+
+Task Creation Details:
+Task ID: 09bfd4ea-4601-4a8a-97fa-d4d7d1f474cf
+Initial Status: TaskStatus.PENDING
+Creation Time: 2025-01-07T21:47:04.138505
+
+Planned Subtasks:
+
+- Find suitable restaurants for a birthday dinner
+  Agent: Search Agent
+  Detail: Search for nice restaurants that can accommodate a party of 8 in the area.
+
+- Check availability for the selected restaurants
+  Agent: Scheduling Agent
+  Detail: Contact the shortlisted restaurants to check if they have availability for 8 people next week.
+  Dependencies:
+    - Depends on: Find suitable restaurants for a birthday dinner
+
+- Make a reservation at the chosen restaurant
+  Agent: Scheduling Agent
+  Detail: Once a restaurant is selected and availability is confirmed, make a reservation for the specified date and time.
+  Dependencies:
+    - Depends on: Check availability for the selected restaurants
+
+- Create a menu or special requests
+  Agent: Concierge Agent
+  Detail: Suggest a menu or any special arrangements (like a birthday cake) that can be made for the party.
+
+- Send invitations to the guests
+  Agent: Scheduling Agent
+  Detail: Prepare and send invitations (digital or printed) to the 8 guests about the restaurant details, date, and time.
+
+Dependency Structure for Task [09bfd4ea-4601-4a8a-97fa-d4d7d1f474cf]:
+=======================================
+├── Find suitable restaurants for a birthday dinner
+│   └── ID: 09bfd4ea-4601-4a8a-97fa-d4d7d1f474cf_sub_0
+│   ├── Check availability for the selected restaurants (depends on: 09bfd4ea-4601-4a8a-97fa-d4d7d1f474cf_sub_0)
+│   │   └── ID: 09bfd4ea-4601-4a8a-97fa-d4d7d1f474cf_sub_1
+│   │   ├── Make a reservation at the chosen restaurant (depends on: 09bfd4ea-4601-4a8a-97fa-d4d7d1f474cf_sub_1)
+│   │   │   └── ID: 09bfd4ea-4601-4a8a-97fa-d4d7d1f474cf_sub_2
+├── Create a menu or special requests
+│   └── ID: 09bfd4ea-4601-4a8a-97fa-d4d7d1f474cf_sub_3
+├── Send invitations to the guests
+│   └── ID: 09bfd4ea-4601-4a8a-97fa-d4d7d1f474cf_sub_4
+=======================================
+
+
+Step 2: Executing Task...
+
+Executing task with 5 subtasks...
+
+Starting 3 subtasks:
+- Find suitable restaurants for a birthday dinner
+- Create a menu or special requests
+- Send invitations to the guests
+✓ Completed: Find suitable restaurants for a birthday dinner
+✓ Completed: Create a menu or special requests
+✓ Completed: Send invitations to the guests
+
+Starting 1 subtasks:
+- Check availability for the selected restaurants
+✓ Completed: Check availability for the selected restaurants
+
+Starting 1 subtasks:
+- Make a reservation at the chosen restaurant
+✓ Completed: Make a reservation at the chosen restaurant
+
+Task completed (5/5 subtasks)
+Task executed in 7.58 seconds
+
+Execution Results:
+Final Status: TaskStatus.COMPLETED
+Execution Message: Task completed with 5 subtasks
+Completion Time: 2025-01-07T21:47:13.344909
+
+Subtask Results:
+
+- Find suitable restaurants for a birthday dinner:
+  Status: TaskStatus.COMPLETED
+  Execution Time: 2025-01-07T21:47:09.283485
+  Result Data:
+    Found 5 results
+    - Best Restaurants for Large Groups in [City Name]
+      Relevance: 9.2
+    - Top Dining Spots for Groups in [City Name]
+      Relevance: 8.5
+    - 8 Perfect Restaurants for Celebrating Birthdays with Groups
+      Relevance: 8.7
+
+- Check availability for the selected restaurants:
+  Status: TaskStatus.COMPLETED
+  Execution Time: 2025-01-07T21:47:11.249801
+  Result Data:
+    Time: Next week
+    Duration: 120 minutes
+
+- Make a reservation at the chosen restaurant:
+  Status: TaskStatus.COMPLETED
+  Execution Time: 2025-01-07T21:47:13.344641
+  Result Data:
+    Time: 2023-11-30T19:00:00
+    Duration: 120 minutes
+
+- Create a menu or special requests:
+  Status: TaskStatus.COMPLETED
+  Execution Time: 2025-01-07T21:47:09.940221
+  Result Data:
+    - Gourmet Finger Foods
+      Rating: 4.5
+      Price: $30-$50 per person
+    - Themed Birthday Cake
+      Rating: 5.0
+      Price: $50-$100
+    - Buffet Style Dinner Menu
+      Rating: 4.7
+      Price: $40-$70 per person
+
+- Send invitations to the guests:
+  Status: TaskStatus.COMPLETED
+  Execution Time: 2025-01-07T21:47:08.597518
+  Result Data:
+    Time: 2023-10-25T19:00:00
+    Duration: 120 minutes

@@ -1,374 +1,313 @@
 # orcs/core.py
-import copy
-import json
-from collections import defaultdict
-from typing import List, Callable, Union, Dict
-
-# Package/library imports
-from openai import OpenAI
-
-
-# Local imports
-from .util import function_to_json, debug_print, merge_chunk
-from .types import (
-    Agent,
-    AgentFunction,
-    ChatCompletionMessage,
-    ChatCompletionMessageToolCall,
-    Function,
-    Response,
-    Result,
-)
-
-__CTX_VARS_NAME__ = "context_variables"
+from typing import Dict, List
+from datetime import datetime
+from openai import AsyncOpenAI
+from .orcs_types import Task, SubTask, TaskResult, TaskStatus, Agent, TaskDependency
+from .orchestration_agents import PlannerAgent, DependencyAgent
+from .execution_agents import EXECUTION_AGENTS
+import uuid, json, asyncio
 
 
-class Orcs:
-    def __init__(self, client=None):
-        if not client:
-            client = OpenAI()
-        self.client = client
+class ORCS:
+    """
+    ORCS is a task orchestration system that uses OpenAI's GPT-4o-mini model to plan and execute tasks.
+    """
+    def __init__(self, api_key: str):
+        self.tasks: Dict[str, Task] = {}  # Changed to dict for easier lookup
+        self.completed_results: Dict[str, TaskResult] = {}  # Store results by subtask_id
+        self.client = AsyncOpenAI(api_key=api_key)  # Store OpenAI client
+        self.planner: Agent = PlannerAgent
+        self.dependency_agent: Agent = DependencyAgent
+        self.agents: Dict[str, Agent] = EXECUTION_AGENTS  # dictionary of all execution agents
 
-    def get_chat_completion(
-        self,
-        agent: Agent,
-        history: List,
-        context_variables: dict,
-        model_override: str,
-        stream: bool,
-        debug: bool,
-    ) -> ChatCompletionMessage:
-        context_variables = defaultdict(str, context_variables)
-        instructions = (
-            agent.instructions(context_variables)
-            if callable(agent.instructions)
-            else agent.instructions
+    async def convert_query_to_task(self, user_query: str) -> Task:
+        """
+        Convert a user query into a Task object using the planner agent.
+        """
+        # Create a unique task ID
+        task_id = str(uuid.uuid4())
+
+        # Get planner response using parse
+        completion = await self.client.beta.chat.completions.parse(
+            model=self.planner.model,
+            messages=[
+                {"role": "system", "content": self.planner.instructions},
+                {"role": "user", "content": user_query},
+            ],
+            response_format=self.planner.response_format,
         )
-        messages = [{"role": "system", "content": instructions}] + history
-        debug_print(debug, "Getting chat completion for...:", messages)
 
-        tools = [function_to_json(f) for f in agent.functions]
-        # hide context_variables from model
-        for tool in tools:
-            params = tool["function"]["parameters"]
-            params["properties"].pop(__CTX_VARS_NAME__, None)
-            if __CTX_VARS_NAME__ in params["required"]:
-                params["required"].remove(__CTX_VARS_NAME__)
+        # Get the parsed response
+        planner_output = completion.choices[0].message.parsed
 
-        create_params = {
-            "model": model_override or agent.model,
-            "messages": messages,
-            "tools": tools or None,
-            "tool_choice": agent.tool_choice,
-            "stream": stream,
-        }
+        # Create subtasks without dependencies initially
+        subtasks = []
+        for idx, subtask_data in enumerate(planner_output.subtasks):
+            # Get the appropriate agent for this subtask
+            agent_name = subtask_data.agent
+            agent = self.agents.get(agent_name)
+            if not agent:
+                raise ValueError(f"No agent found for name: {agent_name}")
 
-        if tools:
-            create_params["parallel_tool_calls"] = agent.parallel_tool_calls
-        
-        return self.client.chat.completions.create(**create_params)
-
-    def handle_function_result(self, result, debug) -> Result:
-        match result:
-            case Result() as result:
-                return result
-
-            case Agent() as agent:
-                return Result(
-                    value=json.dumps({"assistant": agent.name}),
-                    agent=agent,
-                )
-            case _:
-                try:
-                    return Result(value=str(result))
-                except Exception as e:
-                    error_message = f"Failed to cast response to string: {result}. Make sure agent functions return a string or Result object. Error: {str(e)}"
-                    debug_print(debug, error_message)
-                    raise TypeError(error_message)
-
-    def handle_tool_calls(
-        self,
-        tool_calls: List[ChatCompletionMessageToolCall],
-        functions: List[AgentFunction],
-        context_variables: Dict,
-        debug: bool,
-    ) -> Response:
-        function_map = {f.__name__: f for f in functions}
-        partial_response = Response(
-            messages=[], agent=None, context_variables={})
-
-        for tool_call in tool_calls:
-            name = tool_call.function.name
-            # handle missing tool case, skip to next tool
-            if name not in function_map:
-                debug_print(debug, f"Tool {name} not found in function map.")
-                partial_response.messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "tool_name": name,
-                        "content": f"Error: Tool {name} not found.",
-                    }
-                )
-                continue
-            args = json.loads(tool_call.function.arguments)
-            debug_print(
-                debug, f"Processing tool call: {name} with arguments {args}")
-
-            func = function_map[name]
-            # pass context_variables to agent functions
-            if __CTX_VARS_NAME__ in func.__code__.co_varnames:
-                args[__CTX_VARS_NAME__] = context_variables
-            raw_result = function_map[name](**args)
-
-            result: Result = self.handle_function_result(raw_result, debug)
-            partial_response.messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "tool_name": name,
-                    "content": result.value,
-                }
-            )
-            partial_response.context_variables.update(result.context_variables)
-            if result.agent:
-                partial_response.agent = result.agent
-
-        return partial_response
-
-    def run_and_stream(
-        self,
-        agent: Agent,
-        messages: List,
-        context_variables: dict = {},
-        model_override: str = None,
-        debug: bool = False,
-        max_turns: int = float("inf"),
-        execute_tools: bool = True,
-    ):
-        active_agent = agent
-        context_variables = copy.deepcopy(context_variables)
-        history = copy.deepcopy(messages)
-        init_len = len(messages)
-
-        while len(history) - init_len < max_turns:
-
-            message = {
-                "content": "",
-                "sender": agent.name,
-                "role": "assistant",
-                "function_call": None,
-                "tool_calls": defaultdict(
-                    lambda: {
-                        "function": {"arguments": "", "name": ""},
-                        "id": "",
-                        "type": "",
-                    }
-                ),
-            }
-
-            # get completion with current history, agent
-            completion = self.get_chat_completion(
-                agent=active_agent,
-                history=history,
-                context_variables=context_variables,
-                model_override=model_override,
-                stream=True,
-                debug=debug,
-            )
-
-            yield {"delim": "start"}
-            for chunk in completion:
-                delta = json.loads(chunk.choices[0].delta.json())
-                if delta["role"] == "assistant":
-                    delta["sender"] = active_agent.name
-                yield delta
-                delta.pop("role", None)
-                delta.pop("sender", None)
-                merge_chunk(message, delta)
-            yield {"delim": "end"}
-
-            message["tool_calls"] = list(
-                message.get("tool_calls", {}).values())
-            if not message["tool_calls"]:
-                message["tool_calls"] = None
-            debug_print(debug, "Received completion:", message)
-            history.append(message)
-
-            if not message["tool_calls"] or not execute_tools:
-                debug_print(debug, "Ending turn.")
-                break
-
-            # convert tool_calls to objects
-            tool_calls = []
-            for tool_call in message["tool_calls"]:
-                function = Function(
-                    arguments=tool_call["function"]["arguments"],
-                    name=tool_call["function"]["name"],
-                )
-                tool_call_object = ChatCompletionMessageToolCall(
-                    id=tool_call["id"], function=function, type=tool_call["type"]
-                )
-                tool_calls.append(tool_call_object)
-
-            # handle function calls, updating context_variables, and switching agents
-            partial_response = self.handle_tool_calls(
-                tool_calls, active_agent.functions, context_variables, debug
-            )
-            history.extend(partial_response.messages)
-            context_variables.update(partial_response.context_variables)
-            if partial_response.agent:
-                active_agent = partial_response.agent
-
-        yield {
-            "response": Response(
-                messages=history[init_len:],
-                agent=active_agent,
-                context_variables=context_variables,
-            )
-        }
-
-    def run(
-        self,
-        agent: Agent,
-        messages: List,
-        context_variables: dict = {},
-        model_override: str = None,
-        stream: bool = False,
-        debug: bool = False,
-        max_turns: int = float("inf"),
-        execute_tools: bool = True,
-    ) -> Response:
-        if stream:
-            return self.run_and_stream(
+            subtask = SubTask(
+                subtask_id=f"{task_id}_sub_{idx}",
+                task_id=task_id,
                 agent=agent,
-                messages=messages,
-                context_variables=context_variables,
-                model_override=model_override,
-                debug=debug,
-                max_turns=max_turns,
-                execute_tools=execute_tools,
+                title=subtask_data.title,
+                detail=subtask_data.detail,
+                category=subtask_data.category,  # Make sure category is included
+                status=TaskStatus.PENDING,
             )
-        active_agent = agent
-        context_variables = copy.deepcopy(context_variables)
-        history = copy.deepcopy(messages)
-        init_len = len(messages)
+            subtasks.append(subtask)
 
-        while len(history) - init_len < max_turns and active_agent:
-
-            # get completion with current history, agent
-            completion = self.get_chat_completion(
-                agent=active_agent,
-                history=history,
-                context_variables=context_variables,
-                model_override=model_override,
-                stream=stream,
-                debug=debug,
-            )
-            message = completion.choices[0].message
-            debug_print(debug, "Received completion:", message)
-            message.sender = active_agent.name
-            history.append(
-                json.loads(message.model_dump_json())
-            )  # to avoid OpenAI types (?)
-
-            if not message.tool_calls or not execute_tools:
-                debug_print(debug, "Ending turn.")
-                break
-
-            # handle function calls, updating context_variables, and switching agents
-            partial_response = self.handle_tool_calls(
-                message.tool_calls, active_agent.functions, context_variables, debug
-            )
-            history.extend(partial_response.messages)
-            context_variables.update(partial_response.context_variables)
-            if partial_response.agent:
-                active_agent = partial_response.agent
-
-        return Response(
-            messages=history[init_len:],
-            agent=active_agent,
-            context_variables=context_variables,
+        # Create the initial task object with the original query
+        task = Task(
+            task_id=task_id,
+            query=user_query,  # Set the original query
+            subtasks=subtasks,
+            status=TaskStatus.PENDING,
+            start_time=datetime.now().isoformat(),
+            domain=planner_output.domain,  # Set domain from planner output
+            needsClarification=planner_output.needsClarification,  # Set clarification flag
+            clarificationPrompt=planner_output.clarificationPrompt,  # Set clarification prompt
+            timestamp="Just now"  # Add a basic timestamp
         )
 
-    def run_generator(
-        self,
-        agent: Agent,
-        messages: List,
-        context_variables: dict = {},
-        model_override: str = None,
-        debug: bool = False,
-        max_turns: int = float("inf"),
-        execute_tools: bool = True,
-    ):
+        # Get and set dependencies
+        dependencies = await self.get_dependencies(task, planner_output)
+
+        # Update subtasks with their dependencies
+        subtask_dict = {subtask.subtask_id: subtask for subtask in task.subtasks}
+        for dep in dependencies:
+            if dep.subtask_id in subtask_dict:
+                subtask_dict[dep.subtask_id].dependencies.append(dep)
+
+        # Store the task
+        self.tasks[task_id] = task
+        return task
+
+    async def get_dependencies(self, task: Task, planner_output: dict) -> List[TaskDependency]:
         """
-        Generator version of the run method that yields each agent's output and state.
-        Continues running as long as there's an active agent, regardless of tool calls.
-        Only yields is_final=True when there are no more active agents or max_turns is reached.
+        Analyze a task's subtasks and determine their dependencies using the dependency agent.
+        """
+        # Prepare input data for dependency agent
+        dependency_input = {
+            "task_id": task.task_id,
+            "domain": planner_output.domain,
+            "subtasks": [
+                {
+                    "subtask_id": subtask.subtask_id,
+                    "title": subtask.title,
+                    "agent": subtask.agent.name,
+                    "detail": subtask.detail,
+                }
+                for subtask in task.subtasks
+            ],
+        }
+
+        # Get dependency analysis using parse
+        completion = await self.client.beta.chat.completions.parse(
+            model=self.dependency_agent.model,
+            messages=[
+                {"role": "system", "content": self.dependency_agent.instructions},
+                {"role": "user", "content": json.dumps(dependency_input)},
+            ],
+            response_format=self.dependency_agent.response_format,
+        )
+
+        # Get the parsed response
+        dependency_output = completion.choices[0].message.parsed
+
+        # Convert to TaskDependency objects
+        dependencies = []
+        for dep_info in dependency_output.subtask_dependencies:
+            if dep_info.depends_on:  # Only create dependency if there is one
+                dependency = TaskDependency(
+                    task_id=dep_info.depends_on,  # The ID of the task this depends on
+                    subtask_id=dep_info.subtask_id,  # The ID of the dependent task
+                )
+                dependencies.append(dependency)
+
+        return dependencies
+    
+    def print_dependency_structure(self, task_id: str) -> None:
+        """
+        Print a hierarchical visualization of the dependency structure for a given task.
         
-        Yields:
-            tuple: (active_agent, message, context_variables, is_final)
-                - active_agent: The current agent processing the request
-                - message: The message/response from the agent
-                - context_variables: Current state of context variables
-                - is_final: Boolean indicating if this is the final yield
+        Args:
+            task_id (str): The ID of the task to visualize
         """
-        active_agent = agent
-        context_variables = copy.deepcopy(context_variables)
-        history = copy.deepcopy(messages)
-        init_len = len(messages)
-        turn_count = 0
+        def get_dependent_tasks(subtask_id: str) -> List[str]:
+            """Get all subtasks that depend on the current subtask."""
+            dependents = []
+            for st in task.subtasks:
+                for dep in st.dependencies:
+                    if dep.task_id == subtask_id:
+                        dependents.append(st.subtask_id)
+            return dependents
+        
+        def print_subtask_tree(subtask_id: str, level: int = 0, visited: set = None):
+            """Recursively print the subtask tree."""
+            if visited is None:
+                visited = set()
+                
+            if subtask_id in visited:
+                return
+                
+            visited.add(subtask_id)
+            
+            # Find the actual subtask
+            subtask = next((st for st in task.subtasks if st.subtask_id == subtask_id), None)
+            if not subtask:
+                return
+            
+            # Print current subtask with proper indentation
+            prefix = "│   " * level
+            dependencies_str = ""
+            if subtask.dependencies:
+                deps = [f"{dep.task_id}" for dep in subtask.dependencies]
+                dependencies_str = f" (depends on: {', '.join(deps)})"
+                
+            print(f"{prefix}├── {subtask.title}{dependencies_str}")
+            print(f"{prefix}│   └── ID: {subtask.subtask_id}")
+            
+            # Print status if not pending
+            if subtask.status != TaskStatus.PENDING:
+                print(f"{prefix}│   └── Status: {subtask.status.value}")
+            
+            # Recursively print dependent tasks
+            dependent_tasks = get_dependent_tasks(subtask_id)
+            for dep_id in dependent_tasks:
+                print_subtask_tree(dep_id, level + 1, visited)
 
-        while turn_count < max_turns and active_agent:
-            turn_count += 1
-            # Get completion with current history, agent
-            completion = self.get_chat_completion(
-                agent=active_agent,
-                history=history,
-                context_variables=context_variables,
-                model_override=model_override,
-                stream=False,
-                debug=debug,
+        # Get the task
+        task = self.tasks.get(task_id)
+        if not task:
+            print(f"No task found with ID: {task_id}")
+            return
+        
+        print(f"\nDependency Structure for Task [{task_id}]:")
+        print("=======================================")
+        
+        # Find and print root tasks (those with no dependencies)
+        root_tasks = [st.subtask_id for st in task.subtasks if not st.dependencies]
+        
+        # If no root tasks found, print all tasks as they might be circular
+        if not root_tasks:
+            root_tasks = [task.subtasks[0].subtask_id] if task.subtasks else []
+            
+        # Print the tree starting from each root task
+        for root_id in root_tasks:
+            print_subtask_tree(root_id)
+        
+        print("=======================================\n")
+
+    async def execute_task(self, task: Task) -> TaskResult:
+        """
+        Execute a complete task by managing subtasks completions according to their dependencies.
+        """
+        print(f"\nExecuting task with {len(task.subtasks)} subtasks...")
+        
+        # Start the task
+        task.status = TaskStatus.IN_PROGRESS
+        task.start_time = datetime.now().isoformat()
+        
+        completed_subtasks: List[SubTask] = [] 
+        while len(completed_subtasks) < len(task.subtasks):
+            # gather all pending subtasks that can be executed
+            pending_subtasks = [
+                subtask for subtask in task.subtasks 
+                if subtask.status == TaskStatus.PENDING and subtask.can_execute(self.completed_results)
+            ]
+            
+            if not pending_subtasks:
+                break
+            
+            # Show which subtasks are being executed
+            print(f"\nStarting {len(pending_subtasks)} subtasks:")
+            for subtask in pending_subtasks:
+                print(f"- {subtask.title}")
+            
+            # execute all pending subtasks in parallel using asyncio
+            try:
+                tasks = [self.execute_subtask(subtask) for subtask in pending_subtasks]
+                results = await asyncio.gather(*tasks)
+                
+                # update subtasks and completed results
+                for subtask, result in zip(pending_subtasks, results):
+                    completed_subtasks.append(subtask)
+                    self.completed_results[subtask.subtask_id] = result
+                    subtask.status = TaskStatus.COMPLETED
+                    subtask.end_time = result.timestamp
+                    print(f"✓ Completed: {subtask.title}")
+            
+            except Exception as e:
+                print(f"\nError executing subtasks: {str(e)}")
+                raise
+        
+        # task is complete
+        task.status = TaskStatus.COMPLETED
+        task.end_time = datetime.now().isoformat()
+        
+        print(f"\nTask completed ({len(completed_subtasks)}/{len(task.subtasks)} subtasks)")
+        return TaskResult(
+            status=TaskStatus.COMPLETED,
+            data={"completed_subtasks": completed_subtasks},
+            message=f"Task completed with {len(completed_subtasks)} subtasks",
+            timestamp=task.end_time,
+        )
+
+    async def execute_subtask(self, subtask: SubTask) -> TaskResult:
+        """
+        Execute a single subtask using its assigned agent.
+        """
+        subtask.status = TaskStatus.IN_PROGRESS
+        subtask.start_time = datetime.now().isoformat()
+
+        # Get the agent assigned to this subtask
+        agent: Agent = subtask.agent
+
+        # Prepare the input data for the agent to execute the subtask
+        input_data = {
+            "subtask_id": subtask.subtask_id,
+            "task_id": subtask.task_id,
+            "instructions": subtask.detail,
+            "title": subtask.title,
+            "previous_results": [
+                self.completed_results[dep.subtask_id].dict() 
+                for dep in subtask.dependencies 
+                if dep.subtask_id in self.completed_results
+            ],
+        }
+        
+        try:
+            # Run the agent
+            completion = await self.client.beta.chat.completions.parse(
+                model=agent.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": agent.instructions
+                    },
+                    {
+                        "role": "user",
+                        "content": json.dumps(input_data)
+                    }
+                ],
+                response_format=agent.response_format
             )
             
-            message = completion.choices[0].message
-            debug_print(debug, "Received completion:", message)
-            message.sender = active_agent.name
+            # Get the parsed response
+            agent_output = completion.choices[0].message.parsed
             
-            # Convert message to dict to avoid OpenAI types
-            message_dict = json.loads(message.model_dump_json())
-            history.append(message_dict)
-
-
-            if not message.tool_calls:
-                # No tool calls, but we still have an active agent - yield and continue
-                debug_print(debug, "No tool calls, continuing with current agent.")
-                yield (active_agent, message_dict, context_variables, False)
-                continue
-
-            # Yield current state before processing tool calls
-            yield (active_agent, message_dict, context_variables, False)
-
-            # Handle function calls, updating context_variables, and switching agents
-            partial_response = self.handle_tool_calls(
-                message.tool_calls,
-                active_agent.functions,
-                context_variables,
-                debug
+            # Store the result
+            return TaskResult(
+                status=TaskStatus.COMPLETED,
+                data=agent_output.dict(),
+                message=f"Successfully executed {agent.name} for subtask: {subtask.title}",
+                timestamp=datetime.now().isoformat()
             )
             
-            history.extend(partial_response.messages)
-            context_variables.update(partial_response.context_variables)
-            
-            if partial_response.agent:
-                # We have a new agent
-                active_agent = partial_response.agent
-                debug_print(debug, f"Switching to new agent: {active_agent.name}")
-            
-            # Yield the tool call results
-            yield (active_agent, partial_response.messages, context_variables, False)
-
-        # Only reach here if we've run out of turns or lost our active agent
-        debug_print(debug, "Generator ending: " + 
-                   ("max turns reached" if turn_count >= max_turns else "no active agent"))
-        yield (active_agent, message_dict, context_variables, True)
+        except Exception as e:
+            print(f"Error in subtask '{subtask.title}': {str(e)}")
+            raise

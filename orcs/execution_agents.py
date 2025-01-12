@@ -1,6 +1,6 @@
 # execution_agents.py
 from pydantic import BaseModel
-from orcs_types import Agent, DictList
+from .orcs_types import Agent, DictList
 
 # Response schemas for different agent types
 class LocationInfo(BaseModel):

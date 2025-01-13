@@ -3,9 +3,9 @@ import asyncio
 import os
 from datetime import datetime
 from dotenv import load_dotenv
-from core import ORCS
-from execution_agents import EXECUTION_AGENTS
-from orcs_types import TaskStatus
+from orcs.core import ORCS
+from orcs.execution_agents import EXECUTION_AGENTS
+from orcs.orcs_types import TaskStatus
 
 def print_task_creation_details(task):
     """Helper function to print initial task details"""

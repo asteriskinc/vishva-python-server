@@ -1,15 +1,16 @@
 # server.py
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 import os
 from dotenv import load_dotenv
 import json
-
+from typing import Dict
 from orcs.core import ORCS
 from orcs.execution_agents import EXECUTION_AGENTS
 from orcs.orcs_types import Task, TaskStatus
+import asyncio
 
 # Load environment variables
 load_dotenv()
@@ -61,6 +62,52 @@ async def process_query(request: QueryRequest):
         }
         print("Error processing query:", error_detail)
         raise HTTPException(status_code=500, detail=str(error_detail))
+    
+# Store active websocket connections with a lock for thread safety
+connections: Dict[str, WebSocket] = {}
+connections_lock = asyncio.Lock()
+
+@app.websocket("/api/task-execution/{task_id}")
+async def task_execution_websocket(websocket: WebSocket, task_id: str):
+    async with connections_lock:
+        # If there's an existing connection for this task, close it
+        if task_id in connections:
+            try:
+                await connections[task_id].close()
+            except:
+                pass
+            await asyncio.sleep(0.1)  # Give a small delay for cleanup
+        
+        # Accept the new connection
+        await websocket.accept()
+        connections[task_id] = websocket
+        print(f"WebSocket connection established for task: {task_id}")
+    
+    try:
+        while True:
+            data = await websocket.receive_json()
+            print(f"Received message for task {task_id}:", data)
+            
+            if data["type"] == "START_EXECUTION":
+                # For now, just acknowledge receipt
+                await websocket.send_json({
+                    "type": "EXECUTION_STATUS",
+                    "payload": {
+                        "status": "in_progress",
+                        "message": "Task execution started"
+                    }
+                })
+                
+    except WebSocketDisconnect:
+        async with connections_lock:
+            if task_id in connections and connections[task_id] == websocket:
+                del connections[task_id]
+                print(f"WebSocket connection closed for task: {task_id}")
+    except Exception as e:
+        print(f"Error in WebSocket connection for task {task_id}:", str(e))
+        async with connections_lock:
+            if task_id in connections and connections[task_id] == websocket:
+                del connections[task_id]
 
 if __name__ == "__main__":
     uvicorn.run(

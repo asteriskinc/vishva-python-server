@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from orcs.core import ORCS
 from orcs.execution_agents import EXECUTION_AGENTS
 from orcs.orcs_types import Task, TaskStatus
+from orcs.orchestration_agents import PlannerResponse, DependencyResponse, SubtaskSchema
 
 # Load environment variables
 load_dotenv()
@@ -65,36 +66,60 @@ async def process_query(request: QueryRequest):
 connections: Dict[str, WebSocket] = {}
 connections_lock = asyncio.Lock()
 
-async def execute_task_workflow(task_id: str, executable_subtask_ids: set[str]):
-    """
-    Execute the task workflow using ORCS:
-    1. Get task from ORCS's state
-    2. Calculate dependencies
-    3. Execute the task with only the executable subtasks
-    """
+async def send_status_update(websocket, subtask_id, status, message):
+    """Send a status update through the WebSocket."""
     try:
-        # Get the task from ORCS's state
+        await websocket.send_json({
+            "type": "SUBTASK_UPDATE",
+            "payload": {
+                "subtask_id": subtask_id,
+                "status": status,
+                "message": message,
+                "timestamp": datetime.now().isoformat()
+            }
+        })
+    except Exception as e:
+        print(f"Error sending status update: {e}")
+
+async def execute_task_workflow(task_id: str, executable_subtask_ids: set[str], websocket: WebSocket):
+    """Execute the task workflow with real-time status updates."""
+    try:
         task = orcs.tasks.get(task_id)
         if not task:
-            print(f"Task {task_id} not found in ORCS state")
+            await send_status_update(websocket, None, TaskStatus.FAILED, f"Task {task_id} not found")
             return
 
-        print(f"\nStarting execution workflow for task: {task_id}")
-        print("="*50)
-        
-        # Step 1: Create a filtered task with only executable subtasks
+        # Initial status update
+        await send_status_update(
+            websocket, 
+            None, 
+            TaskStatus.IN_PROGRESS,
+            f"Starting execution workflow for task: {task_id}"
+        )
+
+        # Filter executable subtasks
         filtered_task = task.model_copy()
         filtered_task.subtasks = [
             subtask for subtask in task.subtasks 
             if subtask.subtask_id in executable_subtask_ids
         ]
-        
-        print("\nExecutable Subtasks:")
-        for i, subtask in enumerate(filtered_task.subtasks, start=1):
-            print(f"{i}. Subtask ID: {subtask.subtask_id}, Title: {subtask.title}")
-        
-        # Create PlannerResponse for dependency calculation
-        from orcs.orchestration_agents import PlannerResponse, SubtaskSchema
+
+        # Update about subtask filtering
+        await send_status_update(
+            websocket,
+            None,
+            TaskStatus.IN_PROGRESS,
+            f"Filtered {len(filtered_task.subtasks)} subtasks for execution"
+        )
+
+        # Calculate dependencies with status update
+        await send_status_update(
+            websocket,
+            None,
+            TaskStatus.IN_PROGRESS,
+            "Calculating dependencies between subtasks..."
+        )
+
         planner_output = PlannerResponse(
             domain=filtered_task.domain or "general",
             needsClarification=filtered_task.needsClarification,
@@ -109,41 +134,44 @@ async def execute_task_workflow(task_id: str, executable_subtask_ids: set[str]):
                 for subtask in filtered_task.subtasks
             ]
         )
-        
-        # Step 2: Calculate Dependencies for filtered subtasks
-        print("\nStep 2: Calculating Dependencies...")
-        start_time = datetime.now()
+
         dependencies = await orcs.get_dependencies(filtered_task, planner_output)
-        
-        # Update dependencies in filtered task
+
+        # Update dependencies in filtered task with status update
         subtask_dict = {subtask.subtask_id: subtask for subtask in filtered_task.subtasks}
         for dep in dependencies:
             if dep.subtask_id in subtask_dict:
                 subtask_dict[dep.subtask_id].dependencies.append(dep)
-        
-        dependency_calc_time = (datetime.now() - start_time).total_seconds()
-        print(f"Dependencies calculated in {dependency_calc_time:.2f} seconds")
-        
-        # Step 3: Execute filtered task
-        print("\nStep 3: Beginning Task Execution...")
-        start_time = datetime.now()
-        
-        # Update the task in ORCS state to only include executable subtasks
+                await send_status_update(
+                    websocket,
+                    dep.subtask_id,
+                    TaskStatus.IN_PROGRESS,
+                    f"Added dependency: {dep.task_id} -> {dep.subtask_id}"
+                )
+
+        # Begin execution with status updates
         orcs.tasks[task_id] = filtered_task
-        result = await orcs.execute_task(filtered_task)
         
-        execution_time = (datetime.now() - start_time).total_seconds()
-        print(f"\nTask execution completed in {execution_time:.2f} seconds")
-        print(f"Final Status: {result.status}")
-        print(f"Execution Message: {result.message}")
-        print("="*50)
+        async def status_callback(subtask_id, status, message):
+            await send_status_update(websocket, subtask_id, status, message)
         
+        result = await orcs.execute_task(filtered_task, status_callback=status_callback)
+
+        # Final status update
+        await send_status_update(
+            websocket,
+            None,
+            result.status,
+            f"Task execution completed: {result.message}"
+        )
+
         return result
-        
+
     except Exception as e:
         import traceback
-        print(f"Error in task execution workflow:")
-        print(traceback.format_exc())
+        error_msg = f"Error in task execution: {str(e)}\n{traceback.format_exc()}"
+        print(error_msg)
+        await send_status_update(websocket, None, TaskStatus.FAILED, error_msg)
         raise
 
 @app.websocket("/api/task-execution/{task_id}")

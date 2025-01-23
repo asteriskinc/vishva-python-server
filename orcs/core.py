@@ -202,7 +202,7 @@ class ORCS:
         
         print("=======================================\n")
 
-    async def execute_task(self, task: Task) -> TaskResult:
+    async def execute_task(self, task: Task, status_callback=None) -> TaskResult:
         """
         Execute a complete task by managing subtasks completions according to their dependencies.
         """
@@ -227,6 +227,14 @@ class ORCS:
             print(f"\nStarting {len(pending_subtasks)} subtasks:")
             for subtask in pending_subtasks:
                 print(f"- {subtask.title}")
+                
+                # Status update for starting subtask
+                if status_callback:
+                    await status_callback(
+                        subtask.subtask_id, 
+                        TaskStatus.IN_PROGRESS,
+                        f"Starting subtask: {subtask.title}"
+                    )
             
             # execute all pending subtasks in parallel using asyncio
             try:
@@ -240,9 +248,28 @@ class ORCS:
                     subtask.status = TaskStatus.COMPLETED
                     subtask.end_time = result.timestamp
                     print(f"✓ Completed: {subtask.title}")
+                    
+                    # Status update for completed subtask
+                    if status_callback:
+                        await status_callback(
+                            subtask.subtask_id,
+                            TaskStatus.COMPLETED,
+                            f"Completed subtask: {subtask.title}"
+                        )
             
             except Exception as e:
                 print(f"\nError executing subtasks: {str(e)}")
+                
+                # Status update for failed subtasks
+                for subtask in pending_subtasks:
+                    if subtask.status != TaskStatus.COMPLETED:
+                        subtask.status = TaskStatus.FAILED
+                        if status_callback:
+                            await status_callback(
+                                subtask.subtask_id,
+                                TaskStatus.FAILED,
+                                f"Failed subtask: {subtask.title} - {str(e)}"
+                            )
                 raise
         
         # task is complete

@@ -176,26 +176,36 @@ async def execute_task_workflow(task_id: str, executable_subtask_ids: set[str], 
 
 @app.websocket("/api/task-execution/{task_id}")
 async def task_execution_websocket(websocket: WebSocket, task_id: str):
+    print(f"Received WebSocket connection for task: {task_id}")
     async with connections_lock:
-        # If there's an existing connection for this task, close it
+        # Check if there's an existing connection and if it's still active
         if task_id in connections:
             try:
-                await connections[task_id].close()
-            except:
-                pass
-            await asyncio.sleep(0.1)  # Give a small delay for cleanup
+                # Try sending a ping to check if connection is alive
+                await connections[task_id].send_json({"type": "PING"})
+                # If we get here, the connection is still alive
+                print(f"Active connection exists for task {task_id}, rejecting new connection")
+                await websocket.close(1008, "Another connection already exists for this task")
+                return
+            except Exception:
+                # If ping fails, the old connection is dead
+                print(f"Removing stale connection for task {task_id}")
+                del connections[task_id]
         
         # Accept the new connection
+        print("accepting the new connection")
         await websocket.accept()
         connections[task_id] = websocket
         print(f"WebSocket connection established for task: {task_id}")
     
     try:
+        print("starting the while loop")
         while True:
             data = await websocket.receive_json()
             print(f"Received message for task {task_id}:", data)
-            
+            print("received the message")
             if data["type"] == "START_EXECUTION":
+                print("sending the ack")
                 # Acknowledge receipt
                 await websocket.send_json({
                     "type": "EXECUTION_STATUS",
@@ -204,8 +214,10 @@ async def task_execution_websocket(websocket: WebSocket, task_id: str):
                         "message": "Starting task execution workflow"
                     }
                 })
+                print("sent the ack")
                 
                 try:
+                    print("getting the subtasks")
                     # Get the list of subtasks to execute
                     executable_subtask_ids = {
                         subtask["subtask_id"] 
@@ -213,10 +225,11 @@ async def task_execution_websocket(websocket: WebSocket, task_id: str):
                     }
                     
                     # Execute the task workflow with filtered subtasks
-                    result = await execute_task_workflow(task_id, executable_subtask_ids)
+                    result = await execute_task_workflow(task_id, executable_subtask_ids, websocket)
                     
                     # Send completion status
                     if result:
+                        print("sending the completion status")
                         await websocket.send_json({
                             "type": "EXECUTION_STATUS",
                             "payload": {
@@ -226,6 +239,7 @@ async def task_execution_websocket(websocket: WebSocket, task_id: str):
                         })
                 except Exception as e:
                     print(f"Error executing task {task_id}:", str(e))
+                    print("sending the failure status")
                     await websocket.send_json({
                         "type": "EXECUTION_STATUS",
                         "payload": {
@@ -235,12 +249,14 @@ async def task_execution_websocket(websocket: WebSocket, task_id: str):
                     })
                 
     except WebSocketDisconnect:
+        print("websocket disconnect")
         async with connections_lock:
             if task_id in connections and connections[task_id] == websocket:
                 del connections[task_id]
                 print(f"WebSocket connection closed for task: {task_id}")
     except Exception as e:
         print(f"Error in WebSocket connection for task {task_id}:", str(e))
+        print("deleting the task id")
         async with connections_lock:
             if task_id in connections and connections[task_id] == websocket:
                 del connections[task_id]

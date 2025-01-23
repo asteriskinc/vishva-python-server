@@ -1,7 +1,7 @@
 # server.py
 from datetime import datetime
 from typing import Dict
-import asyncio, json, os, uvicorn
+import asyncio, json, os, uvicorn, traceback
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -54,7 +54,6 @@ async def process_query(request: QueryRequest):
         return task_dict
         
     except Exception as e:
-        import traceback
         error_detail = {
             "error": str(e),
             "traceback": traceback.format_exc()
@@ -168,7 +167,6 @@ async def execute_task_workflow(task_id: str, executable_subtask_ids: set[str], 
         return result
 
     except Exception as e:
-        import traceback
         error_msg = f"Error in task execution: {str(e)}\n{traceback.format_exc()}"
         print(error_msg)
         await send_status_update(websocket, None, TaskStatus.FAILED, error_msg)
@@ -181,6 +179,7 @@ async def task_execution_websocket(websocket: WebSocket, task_id: str):
         if task_id in connections:
             try:
                 await connections[task_id].close()
+                print(f"Closed existing connection for task: {task_id}")
             except:
                 pass
             await asyncio.sleep(0.1)  # Give a small delay for cleanup
@@ -188,22 +187,31 @@ async def task_execution_websocket(websocket: WebSocket, task_id: str):
         # Accept the new connection
         await websocket.accept()
         connections[task_id] = websocket
-        print(f"WebSocket connection established for task: {task_id}")
+        print(f"\nWebSocket connection established for task: {task_id}")
     
     try:
         while True:
+            print(f"\nWaiting for messages on task: {task_id}")
+            
             data = await websocket.receive_json()
-            print(f"Received message for task {task_id}:", data)
+            print(f"\nReceived message for task {task_id}:", data)
             
             if data["type"] == "START_EXECUTION":
+                print(f"\nStarting execution for task {task_id}")
+                print("Payload received:", data["payload"])
+                
                 # Acknowledge receipt
-                await websocket.send_json({
-                    "type": "EXECUTION_STATUS",
-                    "payload": {
-                        "status": TaskStatus.IN_PROGRESS,
-                        "message": "Starting task execution workflow"
-                    }
-                })
+                try:
+                    await websocket.send_json({
+                        "type": "EXECUTION_STATUS",
+                        "payload": {
+                            "status": TaskStatus.IN_PROGRESS,
+                            "message": "Starting task execution workflow"
+                        }
+                    })
+                    print(f"Sent initial status update for task {task_id}")
+                except Exception as e:
+                    print(f"Error sending initial status: {str(e)}")
                 
                 try:
                     # Get the list of subtasks to execute
@@ -211,9 +219,12 @@ async def task_execution_websocket(websocket: WebSocket, task_id: str):
                         subtask["subtask_id"] 
                         for subtask in data["payload"]["subtasks"]
                     }
+                    print(f"Executable subtasks: {executable_subtask_ids}")
                     
-                    # Execute the task workflow with filtered subtasks
-                    result = await execute_task_workflow(task_id, executable_subtask_ids)
+                    # Execute the task workflow with filtered subtasks - now passing websocket
+                    result = await execute_task_workflow(task_id, executable_subtask_ids, websocket)
+                    print(f"\nExecution completed for task {task_id}")
+                    print("Result:", result)
                     
                     # Send completion status
                     if result:
@@ -224,27 +235,41 @@ async def task_execution_websocket(websocket: WebSocket, task_id: str):
                                 "message": result.message
                             }
                         })
+                        print(f"Sent completion status for task {task_id}")
                 except Exception as e:
-                    print(f"Error executing task {task_id}:", str(e))
-                    await websocket.send_json({
-                        "type": "EXECUTION_STATUS",
-                        "payload": {
-                            "status": TaskStatus.FAILED,
-                            "message": f"Task execution failed: {str(e)}"
-                        }
-                    })
+                    error_msg = f"Error executing task {task_id}: {str(e)}"
+                    print(f"\nERROR: {error_msg}")
+                    import traceback
+                    print(f"Traceback: {traceback.format_exc()}")
+                    
+                    try:
+                        await websocket.send_json({
+                            "type": "EXECUTION_STATUS",
+                            "payload": {
+                                "status": TaskStatus.FAILED,
+                                "message": error_msg
+                            }
+                        })
+                        print(f"Sent error status for task {task_id}")
+                    except Exception as send_error:
+                        print(f"Error sending error status: {str(send_error)}")
                 
     except WebSocketDisconnect:
+        print(f"\nWebSocket disconnect detected for task: {task_id}")
         async with connections_lock:
             if task_id in connections and connections[task_id] == websocket:
                 del connections[task_id]
-                print(f"WebSocket connection closed for task: {task_id}")
+                print(f"Cleaned up connection for task: {task_id}")
     except Exception as e:
-        print(f"Error in WebSocket connection for task {task_id}:", str(e))
+        print(f"\nUnexpected error in WebSocket connection for task {task_id}:")
+        print(f"Error: {str(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
         async with connections_lock:
             if task_id in connections and connections[task_id] == websocket:
                 del connections[task_id]
-
+                print(f"Cleaned up connection after error for task: {task_id}")
+                
 if __name__ == "__main__":
     uvicorn.run(
         "server:app",

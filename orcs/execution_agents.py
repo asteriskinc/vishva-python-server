@@ -1,6 +1,14 @@
 # execution_agents.py
 from pydantic import BaseModel
 from .orcs_types import Agent, DictList
+from typing import Optional, Dict, Any
+from .tools import AVAILABLE_TOOLS
+
+class BaseAgentResponse(BaseModel):
+    """Base response format that all agent responses must inherit from"""
+    use_tool: bool
+    tool_name: Optional[str]
+    tool_params: Optional[Dict[str, Any]]
 
 # Response schemas for different agent types
 class LocationInfo(BaseModel):
@@ -9,7 +17,7 @@ class LocationInfo(BaseModel):
     place_id: str
     additional_info: DictList
 
-class LocationResponse(BaseModel):
+class LocationResponse(BaseAgentResponse):
     locations: list[LocationInfo]
     search_radius: float
     search_query: str
@@ -22,7 +30,7 @@ class SearchResult(BaseModel):
     timestamp: str
     relevance_score: float
 
-class SearchResponse(BaseModel):
+class SearchResponse(BaseAgentResponse):
     results: list[SearchResult]
     query: str
     total_results: int
@@ -35,7 +43,7 @@ class Schedule(BaseModel):
     participants: list[str]
     notes: str
 
-class SchedulingResponse(BaseModel):
+class SchedulingResponse(BaseAgentResponse):
     schedule: Schedule
     alternatives: list[Schedule]
     conflicts: list[str]
@@ -47,7 +55,7 @@ class NavigationStep(BaseModel):
     mode: str
     additional_info: DictList
 
-class NavigationResponse(BaseModel):
+class NavigationResponse(BaseAgentResponse):
     steps: list[NavigationStep]
     total_distance: float
     total_duration: float
@@ -65,7 +73,7 @@ class Recommendation(BaseModel):
     availability: str
     additional_info: DictList
 
-class ConciergeResponse(BaseModel):
+class ConciergeResponse(BaseAgentResponse):
     recommendations: list[Recommendation]
     search_criteria: DictList
     total_options: int
@@ -81,12 +89,17 @@ LocationAgent = Agent(
 4. Consider context and user preferences when searching
 5. Handle both specific addresses and general area searches
 
+You have access to these tools:
+- get_distance: Get distance and duration between two locations
+- get_directions: Generate driving directions between locations
+
 Always provide:
 - Full address information
 - Coordinates when available
 - Relevant place IDs or references
 - Additional context about the location""",
-    response_format=LocationResponse
+    response_format=LocationResponse,
+    tools=[t for t in AVAILABLE_TOOLS if t.name in ["get_distance", "get_directions"]]
 )
 
 # Define the Search Agent
@@ -100,13 +113,18 @@ SearchAgent = Agent(
 4. Validate information from multiple sources
 5. Provide structured, actionable search results
 
+You have access to these tools:
+- web_search: Perform web searches and get results
+- url_content: Retrieve and parse content from URLs
+
 For each search result, include:
 - Title and URL
 - Relevant snippet or summary
 - Source credibility assessment
 - Timestamp of information
 - Relevance score""",
-    response_format=SearchResponse
+    response_format=SearchResponse,
+    tools=[t for t in AVAILABLE_TOOLS if t.name in ["web_search", "url_content"]]
 )
 
 # Define the Scheduling Agent
@@ -120,13 +138,17 @@ SchedulingAgent = Agent(
 4. Consider duration and buffer times
 5. Account for location and travel time when relevant
 
+You have access to these tools:
+- get_distance: Get distance and duration between locations to help with timing
+
 For each scheduling task:
 - Validate date and time formats
 - Check for scheduling conflicts
 - Provide alternative options when needed
 - Include relevant location details
 - Note any specific requirements or constraints""",
-    response_format=SchedulingResponse
+    response_format=SchedulingResponse,
+    tools=[t for t in AVAILABLE_TOOLS if t.name in ["get_distance"]]
 )
 
 # Define the Navigation Agent
@@ -140,13 +162,18 @@ NavigationAgent = Agent(
 4. Provide turn-by-turn directions
 5. Calculate accurate travel times and distances
 
+You have access to these tools:
+- get_distance: Get distance and duration between locations
+- get_directions: Generate driving directions with different transport modes
+
 For each navigation request:
 - Break down into clear steps
 - Include distance and duration for each step
 - Specify transport modes
 - Note any potential issues or alternatives
 - Consider real-time factors when possible""",
-    response_format=NavigationResponse
+    response_format=NavigationResponse,
+    tools=[t for t in AVAILABLE_TOOLS if t.name in ["get_distance", "get_directions"]]
 )
 
 # Define the Concierge Agent
@@ -160,13 +187,19 @@ ConciergeAgent = Agent(
 4. Offer alternatives and options
 5. Include relevant details for decision-making
 
+You have access to these tools:
+- web_search: Search for places and recommendations
+- url_content: Get detailed information about places
+- get_distance: Check distances to recommended places
+
 For each recommendation:
 - Include comprehensive details
 - Provide ratings and reviews when available
 - Note availability and constraints
 - Consider user context and preferences
 - Offer multiple options when appropriate""",
-    response_format=ConciergeResponse
+    response_format=ConciergeResponse,
+    tools=[t for t in AVAILABLE_TOOLS if t.name in ["web_search", "url_content", "get_distance"]]
 )
 
 # Export all agents

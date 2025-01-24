@@ -304,36 +304,56 @@ class ORCS:
                 self.completed_results[dep.subtask_id].dict() 
                 for dep in subtask.dependencies 
                 if dep.subtask_id in self.completed_results
-            ],
+            ]
         }
         
         try:
-            # Run the agent
-            completion = await self.client.beta.chat.completions.parse(
-                model=agent.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": agent.instructions
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(input_data)
-                    }
-                ],
-                response_format=agent.response_format
-            )
-            
-            # Get the parsed response
-            agent_output = completion.choices[0].message.parsed
-            
-            # Store the result
-            return TaskResult(
-                status=TaskStatus.COMPLETED,
-                data=agent_output.dict(),
-                message=f"Successfully executed {agent.name} for subtask: {subtask.title}",
-                timestamp=datetime.now().isoformat()
-            )
+            # Run the agent with tool execution loop
+            while True:
+                completion = await self.client.beta.chat.completions.parse(
+                    model=agent.model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": agent.instructions
+                        },
+                        {
+                            "role": "user",
+                            "content": json.dumps(input_data)
+                        }
+                    ],
+                    tools=[tool.get_schema() for tool in agent.tools],
+                    tool_choice="auto",
+                    response_format=agent.response_format
+                )
+                
+                # Get the response
+                message = completion.choices[0].message
+                
+                # Check if tool call was made
+                if message.parsed["use_tool"]:
+                    tool_name = message.parsed["tool_name"]
+                    tool_params = message.parsed["tool_params"]
+                    
+                    # Find the requested tool
+                    tool = next((t for t in agent.tools if t.name == tool_name), None)
+                    if not tool:
+                        raise ValueError(f"Tool {tool_name} not found")
+                        
+                    # Execute the tool
+                    tool_result = await tool.function(**tool_params)
+                    
+                    # Add tool result to input data for next iteration
+                    input_data["tool_result"] = tool_result
+                    continue
+                
+                # If no tool call was made, we're done
+                return TaskResult(
+                    status=TaskStatus.COMPLETED,
+                    data=message.parsed,
+                    message=f"Successfully executed {agent.name} for subtask: {subtask.title}",
+                    timestamp=datetime.now().isoformat()
+                )
             
         except Exception as e:
             print(f"Error in subtask '{subtask.title}': {str(e)}")

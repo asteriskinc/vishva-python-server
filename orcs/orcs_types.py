@@ -1,6 +1,6 @@
 # orcs/orcs_types.py
-import json
-from typing import Callable, Dict, Optional, List, Any, Union
+import json, inspect
+from typing import Callable, Dict, Optional, List, Any, Union, Type
 from pydantic import BaseModel, Field, model_serializer
 from enum import Enum
 
@@ -18,15 +18,60 @@ class DictList(BaseModel):
 
 AgentTool = Callable[[], str]
 
-class Agent(BaseModel): 
-    name: str = "Agent" 
-    model: str = "gpt-4o-mini"
-    instructions: str | Callable[[], str] = "You are a helpful assistant."
-    tools: Dict[str, AgentTool] = Field(default_factory=dict)
+class Tool(BaseModel):
+    """Represents a tool that can be used by agents"""
+    name: str
+    description: str
+    function: Callable
+    parameters: Dict[str, Any]
+    required_params: List[str]
+
+    def get_schema(self) -> Dict[str, Any]:
+        """Get the OpenAI function schema for this tool"""
+        type_map = {
+            str: "string",
+            int: "integer",
+            float: "number",
+            bool: "boolean",
+            list: "array",
+            dict: "object",
+            type(None): "null",
+        }
+
+        signature = inspect.signature(self.function)
+        parameters = {}
+        for param in signature.parameters.values():
+            if param.name == 'self' or param.name.startswith('_'):
+                continue
+            param_type = type_map.get(param.annotation, "string")
+            parameters[param.name] = {"type": param_type}
+
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": {
+                    "type": "object",
+                    "properties": parameters,
+                    "required": self.required_params
+                }
+            }
+        }
+
+    class Config:
+        arbitrary_types_allowed = True
+
+class Agent(BaseModel):
+    """Represents an agent that can execute tasks"""
+    name: str
+    model: str
+    instructions: str
+    response_format: Type[BaseModel]
+    tools: List[Tool] = Field(default_factory=list)  # Add tools to agents
     tool_choice: Optional[str] | None = None
     parallel_tool_calls: bool = True
-    response_format: Any = None
-    
+
     @model_serializer
     def serialize_model(self) -> dict:
         """Custom serialization for Agent class"""

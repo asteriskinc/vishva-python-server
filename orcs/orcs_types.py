@@ -54,8 +54,10 @@ class Tool(BaseModel):
                 "parameters": {
                     "type": "object",
                     "properties": parameters,
-                    "required": self.required_params
-                }
+                    "required": self.required_params,
+                    "additionalProperties": False
+                },
+                "strict": True
             }
         }
 

@@ -300,6 +300,7 @@ class ORCS:
             "task_id": subtask.task_id,
             "instructions": subtask.detail,
             "title": subtask.title,
+            # Include any results from subtasks this one depends on
             "previous_results": [
                 self.completed_results[dep.subtask_id].dict() 
                 for dep in subtask.dependencies 
@@ -308,8 +309,14 @@ class ORCS:
         }
         
         try:
-            # Run the agent with tool execution loop
+            print(f"[execute_subtask] Starting execution of subtask '{subtask.subtask_id}' "
+                  f"title='{subtask.title}' with agent='{agent.name}'")
+
             while True:
+                print(f"[execute_subtask] Sending request to model '{agent.model}' with input data: "
+                      f"{json.dumps(input_data)}")
+
+                # Make a call to the OpenAI API using our asynchronous client.
                 completion = await self.client.beta.chat.completions.parse(
                     model=agent.model,
                     messages=[
@@ -326,35 +333,48 @@ class ORCS:
                     tool_choice="auto",
                     response_format=agent.response_format
                 )
-                
-                # Get the response
+
                 message = completion.choices[0].message
-                
-                # Check if tool call was made
-                if message.parsed["use_tool"]:
-                    tool_name = message.parsed["tool_name"]
-                    tool_params = message.parsed["tool_params"]
-                    
-                    # Find the requested tool
-                    tool = next((t for t in agent.tools if t.name == tool_name), None)
-                    if not tool:
-                        raise ValueError(f"Tool {tool_name} not found")
-                        
-                    # Execute the tool
-                    tool_result = await tool.function(**tool_params)
-                    
-                    # Add tool result to input data for next iteration
-                    input_data["tool_result"] = tool_result
+                print("[execute_subtask] Received response from model. Checking for tool calls...")
+
+                # If the model is requesting one or more tool calls, we execute them
+                if message.tool_calls:
+                    print(f"[execute_subtask] Model requested tool calls: {message.tool_calls}")
+                    for tool_call in message.tool_calls:
+                        tool_name = tool_call.function.name
+                        tool_params = tool_call.function.parsed_arguments
+                        print(f"[execute_subtask] Attempting to find tool '{tool_name}' with params: "
+                              f"{tool_params}")
+
+                        tool = next((t for t in agent.tools if t.name == tool_name), None)
+                        if not tool:
+                            error_msg = f"[execute_subtask] Tool {tool_name} not found"
+                            print(error_msg)
+                            raise ValueError(error_msg)
+
+                        print(f"[execute_subtask] Executing tool '{tool_name}'...")
+                        tool_result = tool.function(**tool_params)
+                        if asyncio.iscoroutine(tool_result):
+                            tool_result = await tool_result
+                        print(f"[execute_subtask] Tool '{tool_name}' execution complete. "
+                              f"Result: {tool_result}")
+
+                        # Pass the tool result back into input_data for a subsequent factored request
+                        input_data["tool_result"] = tool_result
+
+                    print("[execute_subtask] Tool calls complete. Re-sending updated input data to model...")
+                    # Loop back to allow the model to incorporate the new tool result
                     continue
-                
-                # If no tool call was made, we're done
+
+                # If no tool calls are requested, we assume the agent has returned a final result
+                print("[execute_subtask] No more tool calls requested. Finalizing subtask execution.")
                 return TaskResult(
                     status=TaskStatus.COMPLETED,
-                    data=message.parsed,
-                    message=f"Successfully executed {agent.name} for subtask: {subtask.title}",
+                    data=message.parsed.model_dump() if message.parsed else {},
+                    message="Subtask execution complete",
                     timestamp=datetime.now().isoformat()
                 )
             
         except Exception as e:
-            print(f"Error in subtask '{subtask.title}': {str(e)}")
+            print(f"[execute_subtask] Error in subtask '{subtask.title}': {str(e)}")
             raise

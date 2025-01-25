@@ -5,45 +5,15 @@ import urllib.parse
 import os
 from bs4 import BeautifulSoup
 from googlesearch import search
-import time
-from functools import lru_cache
-import asyncio
 
-# Cache and rate limiting settings
-SEARCH_CACHE_SIZE = 100  # Number of search results to cache
-MIN_DELAY_BETWEEN_SEARCHES = 2  # Minimum delay in seconds between searches
-last_search_time = 0
-
-@lru_cache(maxsize=SEARCH_CACHE_SIZE)
-def _cached_web_search(query: str, num_results: int = 5) -> tuple:
-    """Cached version of the web search that returns immutable results"""
-    results = []
-    for result in search(query, num_results=num_results):
-        results.append(result)
-    return tuple(results)
-
-async def perform_web_search(query: str) -> Dict[str, Any]:
-    """Perform a rate-limited web search and return results"""
-    global last_search_time
-    
+# Web Search Tools
+def perform_web_search(query: str) -> Dict[str, Any]:
+    """Perform a web search and return results"""
+    search_results = []
     try:
-        # Check if we need to delay
-        current_time = time.time()
-        time_since_last_search = current_time - last_search_time
-        if time_since_last_search < MIN_DELAY_BETWEEN_SEARCHES:
-            delay_time = MIN_DELAY_BETWEEN_SEARCHES - time_since_last_search
-            print(f"Rate limiting: Waiting {delay_time:.2f} seconds before next search")
-            await asyncio.sleep(delay_time)
-        
-        # Update last search time
-        last_search_time = time.time()
-        
-        # Perform cached search
-        search_results = list(_cached_web_search(query))
-        return {
-            "results": search_results,
-            "cached": _cached_web_search.cache_info().hits > 0
-        }
+        for result in search(query, num_results=5):
+            search_results.append(result)
+        return {"results": search_results}
     except Exception as e:
         return {"error": f"Search failed: {str(e)}"}
 

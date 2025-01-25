@@ -284,51 +284,57 @@ class ORCS:
             timestamp=task.end_time,
         )
 
-    async def execute_subtask(self, subtask: SubTask) -> TaskResult:
+    async def execute_subtask(self, subtask: SubTask, max_turns: int = 5) -> TaskResult:
         """
         Execute a single subtask using its assigned agent.
+        
+        Args:
+            subtask (SubTask): The subtask to execute
+            max_turns (int): Maximum number of model-tool interaction turns before stopping. Defaults to 5.
         """
         subtask.status = TaskStatus.IN_PROGRESS
         subtask.start_time = datetime.now().isoformat()
 
         # Get the agent assigned to this subtask
         agent: Agent = subtask.agent
-
-        # Prepare the input data for the agent to execute the subtask
-        input_data = {
-            "subtask_id": subtask.subtask_id,
-            "task_id": subtask.task_id,
-            "instructions": subtask.detail,
-            "title": subtask.title,
-            # Include any results from subtasks this one depends on
-            "previous_results": [
-                self.completed_results[dep.subtask_id].dict() 
-                for dep in subtask.dependencies 
-                if dep.subtask_id in self.completed_results
-            ]
-        }
+        
+        # Initialize message history
+        history = [
+            {
+                "role": "system",
+                "content": agent.instructions
+            },
+            {
+                "role": "user",
+                "content": json.dumps({
+                    "subtask_id": subtask.subtask_id,
+                    "task_id": subtask.task_id,
+                    "instructions": subtask.detail,
+                    "title": subtask.title,
+                    "previous_results": [
+                        self.completed_results[dep.subtask_id].dict() 
+                        for dep in subtask.dependencies 
+                        if dep.subtask_id in self.completed_results
+                    ]
+                })
+            }
+        ]
         
         try:
             print(f"[execute_subtask] Starting execution of subtask '{subtask.subtask_id}' "
                   f"title='{subtask.title}' with agent='{agent.name}'")
 
-            while True:
-                print(f"[execute_subtask] Sending request to model '{agent.model}' with input data: "
-                      f"{json.dumps(input_data)}")
+            turn_count = 0
+            while turn_count < max_turns:
+                turn_count += 1
+                print(f"[execute_subtask] Turn {turn_count}/{max_turns}")
+                print(f"[execute_subtask] Sending request to model '{agent.model}' with history: "
+                      f"{json.dumps(history[-2:])}")  # Only show last 2 messages for brevity
 
-                # Make a call to the OpenAI API using our asynchronous client.
+                # Make a call to the OpenAI API using our asynchronous client
                 completion = await self.client.beta.chat.completions.parse(
                     model=agent.model,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": agent.instructions
-                        },
-                        {
-                            "role": "user",
-                            "content": json.dumps(input_data)
-                        }
-                    ],
+                    messages=history,
                     tools=[tool.get_schema() for tool in agent.tools],
                     tool_choice="auto",
                     response_format=agent.response_format
@@ -337,9 +343,23 @@ class ORCS:
                 message = completion.choices[0].message
                 print("[execute_subtask] Received response from model. Checking for tool calls...")
 
-                # If the model is requesting one or more tool calls, we execute them
+                # Add the assistant's message to history
+                history.append(json.loads(message.model_dump_json()))
+
+                # If the model is requesting tool calls, execute them and continue the conversation
                 if message.tool_calls:
+                    if turn_count >= max_turns:
+                        print(f"[execute_subtask] Reached maximum turns ({max_turns}). Stopping execution.")
+                        return TaskResult(
+                            status=TaskStatus.FAILED,
+                            data={},
+                            message=f"Exceeded maximum number of turns ({max_turns})",
+                            timestamp=datetime.now().isoformat()
+                        )
+
                     print(f"[execute_subtask] Model requested tool calls: {message.tool_calls}")
+                    tool_results = []
+                    
                     for tool_call in message.tool_calls:
                         tool_name = tool_call.function.name
                         tool_params = tool_call.function.parsed_arguments
@@ -358,12 +378,15 @@ class ORCS:
                             tool_result = await tool_result
                         print(f"[execute_subtask] Tool '{tool_name}' execution complete. "
                               f"Result: {tool_result}")
+                        
+                        # Add individual tool result to history
+                        history.append({
+                            "role": "tool",
+                            "content": json.dumps(tool_result),
+                            "tool_call_id": tool_call.id
+                        })
 
-                        # Pass the tool result back into input_data for a subsequent factored request
-                        input_data["tool_result"] = tool_result
-
-                    print("[execute_subtask] Tool calls complete. Re-sending updated input data to model...")
-                    # Loop back to allow the model to incorporate the new tool result
+                    print("[execute_subtask] Tool calls complete. Continuing conversation...")
                     continue
 
                 # If no tool calls are requested, we assume the agent has returned a final result
@@ -374,6 +397,14 @@ class ORCS:
                     message="Subtask execution complete",
                     timestamp=datetime.now().isoformat()
                 )
+            
+            # If we exit the while loop without returning, we hit the max turns
+            return TaskResult(
+                status=TaskStatus.FAILED,
+                data={},
+                message=f"Exceeded maximum number of turns ({max_turns})",
+                timestamp=datetime.now().isoformat()
+            )
             
         except Exception as e:
             print(f"[execute_subtask] Error in subtask '{subtask.title}': {str(e)}")

@@ -1,8 +1,8 @@
 # orcs/orcs_types.py
-import json
 from typing import Callable, Dict, Optional, List, Any, Union
 from pydantic import BaseModel, Field, model_serializer
 from enum import Enum
+from datetime import datetime
 
 """------------Dict Format for OpenAI Compatibility------------"""
 class DictList(BaseModel):
@@ -14,9 +14,35 @@ class DictList(BaseModel):
     def to_dict(self):
         return {item.key: item.value for item in self.items}
 
-"""------------Our Core Classes and Types Here------------"""
+"""------------Interaction and Tool Call Types------------"""
+class ToolCallResult(BaseModel):
+    """Records a tool call and its result"""
+    tool_name: str
+    arguments: DictList
+    result: DictList
+    timestamp: str
+    error: Optional[str] = None
 
-AgentTool = Callable[[], Any]
+    @model_serializer
+    def serialize_model(self) -> dict:
+        return {
+            "tool_name": self.tool_name,
+            "arguments": self.arguments.to_dict(),
+            "result": self.result.to_dict(),
+            "timestamp": self.timestamp,
+            "error": self.error
+        }
+
+class AgentInteraction(BaseModel):
+    """Records an agent's interaction in a conversation"""
+    agent_name: str
+    role: str = "assistant"
+    content: str
+    tool_calls: Optional[List[ToolCallResult]] = None
+    timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
+
+"""------------Core Types------------"""
+AgentTool = Callable[[], str]
 
 class Agent(BaseModel): 
     name: str = "Agent" 
@@ -36,7 +62,6 @@ class Agent(BaseModel):
             "instructions": self.instructions if isinstance(self.instructions, str) else self.instructions(),
             "tool_choice": self.tool_choice,
             "parallel_tool_calls": self.parallel_tool_calls,
-            # Convert response_format to string representation if it's a class
             "response_format": (
                 self.response_format.__name__ 
                 if isinstance(self.response_format, type) 
@@ -79,6 +104,8 @@ class SubTask(BaseModel):
     category: int = 1  # 1: Direct task, 2: Optional task
     approved: Optional[bool] = None
     userContext: Optional[str] = None
+    # History tracking
+    history: List[AgentInteraction] = Field(default_factory=list)
     
     class Config:
         arbitrary_types_allowed = True
@@ -92,6 +119,43 @@ class SubTask(BaseModel):
             completed_tasks[dep.task_id].status == TaskStatus.COMPLETED
             for dep in self.dependencies
         )
+
+    def add_interaction(
+        self, 
+        agent_name: str, 
+        content: str, 
+        tool_calls: Optional[List[ToolCallResult]] = None
+    ) -> AgentInteraction:
+        """Add a new interaction to the subtask history"""
+        interaction = AgentInteraction(
+            agent_name=agent_name,
+            content=content,
+            tool_calls=tool_calls,
+            timestamp=datetime.now().isoformat()
+        )
+        self.history.append(interaction)
+        return interaction
+
+    def get_formatted_history(self) -> str:
+        """Get a formatted string of the interaction history"""
+        formatted_lines = []
+        
+        # Add interaction history
+        formatted_lines.append(f"History for subtask '{self.title}':")
+        for interaction in self.history:
+            formatted_lines.append(f"[{interaction.timestamp}] {interaction.agent_name}:")
+            formatted_lines.append(interaction.content)
+            
+            if interaction.tool_calls:
+                for tool_call in interaction.tool_calls:
+                    formatted_lines.append(f"Tool Call: {tool_call.tool_name}")
+                    formatted_lines.append(f"Arguments: {tool_call.arguments.to_dict()}")
+                    formatted_lines.append(f"Result: {tool_call.result.to_dict()}")
+                    if tool_call.error:
+                        formatted_lines.append(f"Error: {tool_call.error}")
+            formatted_lines.append("")
+            
+        return "\n".join(formatted_lines)
 
 class Task(BaseModel): 
     """Represents a task"""
@@ -108,3 +172,50 @@ class Task(BaseModel):
     clarificationPrompt: Optional[str] = None
     clarificationResponse: Optional[str] = None
     timestamp: Optional[str] = None
+
+    def get_context(self) -> str:
+        """
+        Get the complete context of the task by aggregating all subtask histories.
+        This includes all agent interactions, tool calls, and results across all subtasks.
+        """
+        context_lines = [
+            f"Task Context for '{self.query}'",
+            f"Status: {self.status.value}",
+            f"Domain: {self.domain}",
+            ""
+        ]
+
+        # Add clarification information if present
+        if self.needsClarification:
+            context_lines.extend([
+                "Clarification Required:",
+                f"Prompt: {self.clarificationPrompt}",
+                f"Response: {self.clarificationResponse or 'Not provided'}",
+                ""
+            ])
+
+        # Add each subtask's history
+        for subtask in self.subtasks:
+            context_lines.extend([
+                f"=== Subtask: {subtask.title} ===",
+                f"Status: {subtask.status.value}",
+                f"Agent: {subtask.agent.name}",
+                ""
+            ])
+            
+            # Add dependencies if any
+            if subtask.dependencies:
+                context_lines.append("Dependencies:")
+                for dep in subtask.dependencies:
+                    context_lines.append(f"- Depends on subtask: {dep.subtask_id}")
+                context_lines.append("")
+
+            # Add the subtask's interaction history
+            if subtask.history:
+                context_lines.extend(subtask.get_formatted_history().split('\n'))
+            else:
+                context_lines.append("No interactions recorded yet.")
+            
+            context_lines.append("\n")  # Extra spacing between subtasks
+
+        return "\n".join(context_lines)

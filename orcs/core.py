@@ -1,11 +1,13 @@
 # orcs/core.py
+import uuid, json, asyncio
 from typing import Dict, List
 from datetime import datetime
 from openai import AsyncOpenAI
 from .orcs_types import Task, SubTask, TaskResult, TaskStatus, Agent, TaskDependency
 from .orchestration_agents import PlannerAgent, DependencyAgent
 from .execution_agents import EXECUTION_AGENTS
-import uuid, json, asyncio
+from .tool_manager import tool_registry
+
 
 
 class ORCS:
@@ -32,6 +34,8 @@ class ORCS:
             model=self.planner.model,
             messages=[
                 {"role": "system", "content": self.planner.instructions},
+                {"role": "system", "content": "Available Agents and their capabilities:"},
+                {"role": "system", "content": "\n".join([f"- {agent.name}: {agent.instructions}" for agent in self.agents.values()])},
                 {"role": "user", "content": user_query},
             ],
             response_format=self.planner.response_format,
@@ -287,6 +291,7 @@ class ORCS:
     async def execute_subtask(self, subtask: SubTask) -> TaskResult:
         """
         Execute a single subtask using its assigned agent.
+        Includes tool calling capabilities but currently only logs intended tool usage.
         """
         subtask.status = TaskStatus.IN_PROGRESS
         subtask.start_time = datetime.now().isoformat()
@@ -294,22 +299,28 @@ class ORCS:
         # Get the agent assigned to this subtask
         agent: Agent = subtask.agent
 
-        # Prepare the input data for the agent to execute the subtask
+        # Prepare the input data for the agent
         input_data = {
             "subtask_id": subtask.subtask_id,
             "task_id": subtask.task_id,
             "instructions": subtask.detail,
             "title": subtask.title,
             "previous_results": [
-                self.completed_results[dep.subtask_id].dict() 
+                self.completed_results[dep.subtask_id].model_dump(mode='json')
                 for dep in subtask.dependencies 
                 if dep.subtask_id in self.completed_results
             ],
         }
-        
+
         try:
-            # Run the agent
-            completion = await self.client.beta.chat.completions.parse(
+            # Get the tools for this agent from the tool registry
+            tools = tool_registry.get_agent_tools(agent)
+            
+            print(f"\nAgent '{agent.name}' executing subtask '{subtask.title}'")
+            print(f"Available tools: {[tool['function']['name'] for tool in tools]}")
+
+            # Make the API call with tool calling enabled
+            completion = await self.client.chat.completions.create(
                 model=agent.model,
                 messages=[
                     {
@@ -321,20 +332,40 @@ class ORCS:
                         "content": json.dumps(input_data)
                     }
                 ],
-                response_format=agent.response_format
+                tools=tools if tools else None,
+                tool_choice=agent.tool_choice if agent.tool_choice else "auto"
             )
-            
-            # Get the parsed response
-            agent_output = completion.choices[0].message.parsed
-            
-            # Store the result
+
+            # Log the response and any tool calls
+            response = completion.choices[0].message
+            print("\nModel Response:")
+            print(f"Content: {response.content}")
+
+            if hasattr(response, 'tool_calls') and response.tool_calls:
+                print("\nTool Calls Requested:")
+                for tool_call in response.tool_calls:
+                    print(f"\nTool: {tool_call.function.name}")
+                    print(f"Arguments: {tool_call.function.arguments}")
+
+            # For now, return a simplified result
+            # In the future, we'll execute the tool calls and include their results
             return TaskResult(
                 status=TaskStatus.COMPLETED,
-                data=agent_output.dict(),
+                data={
+                    "agent_response": response.content,
+                    "intended_tool_calls": [
+                        {
+                            "tool": tool_call.function.name,
+                            "arguments": tool_call.function.arguments
+                        }
+                        for tool_call in (response.tool_calls or [])
+                    ]
+                },
                 message=f"Successfully executed {agent.name} for subtask: {subtask.title}",
                 timestamp=datetime.now().isoformat()
             )
-            
+
         except Exception as e:
-            print(f"Error in subtask '{subtask.title}': {str(e)}")
-            raise
+            error_msg = f"Error in subtask '{subtask.title}': {str(e)}"
+            print(error_msg)
+            raise ValueError(error_msg)

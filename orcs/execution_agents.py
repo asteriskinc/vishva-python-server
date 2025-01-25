@@ -1,6 +1,7 @@
 # execution_agents.py
 from pydantic import BaseModel
 from .orcs_types import Agent, DictList
+from .tools.web_tools import web_search, get_distance_matrix, get_directions
 
 # Response schemas for different agent types
 class LocationInfo(BaseModel):
@@ -14,20 +15,6 @@ class LocationResponse(BaseModel):
     search_radius: float
     search_query: str
 
-class SearchResult(BaseModel):
-    title: str
-    url: str
-    snippet: str
-    source: str
-    timestamp: str
-    relevance_score: float
-
-class SearchResponse(BaseModel):
-    results: list[SearchResult]
-    query: str
-    total_results: int
-    filtered_results: int
-
 class Schedule(BaseModel):
     event_time: str
     duration: int
@@ -40,140 +27,172 @@ class SchedulingResponse(BaseModel):
     alternatives: list[Schedule]
     conflicts: list[str]
 
-class NavigationStep(BaseModel):
-    instruction: str
-    distance: float
-    duration: float
-    mode: str
-    additional_info: DictList
+class MovieShowtime(BaseModel):
+    movie_title: str
+    theater_name: str
+    theater_location: str
+    datetime: str
+    price: float
+    available_seats: int
+    booking_link: str
+
+class MovieBookingResponse(BaseModel):
+    showtimes: list[MovieShowtime]
+    selected_showtime: MovieShowtime
+    booking_status: str
+    payment_options: list[str]
+
+class Restaurant(BaseModel):
+    name: str
+    cuisine: str
+    price_range: str
+    rating: float
+    location: str
+    available_times: list[str]
+    menu_link: str
+
+class DiningResponse(BaseModel):
+    restaurants: list[Restaurant]
+    selected_restaurant: Restaurant
+    booking_status: str
+    special_requests: str
 
 class NavigationResponse(BaseModel):
-    steps: list[NavigationStep]
-    total_distance: float
-    total_duration: float
-    start_location: str
-    end_location: str
-    transport_mode: str
+    route: str
+    distance: str
+    duration: str
+    traffic_info: str
+    alternative_routes: list[str]
 
-class Recommendation(BaseModel):
-    title: str
-    category: str
-    rating: float
-    price_range: str
-    description: str
-    location: str
-    availability: str
-    additional_info: DictList
+# Define specialized agents for specific use cases
 
-class ConciergeResponse(BaseModel):
-    recommendations: list[Recommendation]
-    search_criteria: DictList
-    total_options: int
-
-# Define the Location Agent
-LocationAgent = Agent(
-    name="Location Agent",
+# Movie Booking Agent
+MovieBookingAgent = Agent(
+    name="Movie Booking Agent",
     model="gpt-4o-mini-2024-07-18",
-    instructions="""You are a location-based search specialist. Your role is to:
-1. Process location-related queries accurately
-2. Find and validate physical locations
-3. Provide detailed location information including coordinates
-4. Consider context and user preferences when searching
-5. Handle both specific addresses and general area searches
+    instructions="""You are a specialized movie booking assistant. Your role is to:
+1. Search for and compare movie showtimes across theaters
+2. Consider user preferences for movie genre, timing, and location
+3. Check theater amenities and seating availability
+4. Handle booking processes and payment options
 
-Always provide:
-- Full address information
-- Coordinates when available
-- Relevant place IDs or references
-- Additional context about the location""",
-    response_format=LocationResponse
+Use available tools to:
+- Search for movie information and reviews
+- Find nearby theaters
+- Calculate travel times to theaters
+- Compare prices and showtimes
+
+Always consider:
+- Movie ratings and reviews
+- Theater distance and accessibility
+- Show timing preferences
+- Seat availability
+- IMAX/3D/special format options""",
+    tools={
+        "web_search": web_search,
+        "get_distance_matrix": get_distance_matrix,
+        "get_directions": get_directions
+    },
+    response_format=MovieBookingResponse
 )
 
-# Define the Search Agent
-SearchAgent = Agent(
-    name="Search Agent",
+# Restaurant Booking Agent
+RestaurantBookingAgent = Agent(
+    name="Restaurant Booking Agent",
     model="gpt-4o-mini-2024-07-18",
-    instructions="""You are a web search and comparison specialist. Your role is to:
-1. Execute detailed web searches based on user queries
-2. Filter and rank results by relevance
-3. Compare options across multiple sources
-4. Validate information from multiple sources
-5. Provide structured, actionable search results
+    instructions="""You are a specialized restaurant booking assistant. Your role is to:
+1. Find and evaluate restaurants based on user preferences
+2. Check availability and make reservations
+3. Consider dietary restrictions and special occasions
+4. Provide menu information and recommendations
 
-For each search result, include:
-- Title and URL
-- Relevant snippet or summary
-- Source credibility assessment
-- Timestamp of information
-- Relevance score""",
-    response_format=SearchResponse
+Use available tools to:
+- Search for restaurant information and reviews
+- Calculate distance and travel time
+- Check opening hours and availability
+- Find and compare menus
+
+Always consider:
+- Cuisine preferences
+- Dietary restrictions
+- Price range
+- Location and accessibility
+- Special occasion requirements
+- Group size accommodations""",
+    tools={
+        "web_search": web_search,
+        "get_distance_matrix": get_distance_matrix,
+        "get_directions": get_directions
+    },
+    response_format=DiningResponse
 )
 
-# Define the Scheduling Agent
-SchedulingAgent = Agent(
-    name="Scheduling Agent",
+# Event Planning Agent
+EventPlanningAgent = Agent(
+    name="Event Planning Agent",
     model="gpt-4o-mini-2024-07-18",
-    instructions="""You are a scheduling and time management specialist. Your role is to:
-1. Process time-based requests and scheduling needs
-2. Check availability and conflicts
-3. Suggest optimal timing options
-4. Consider duration and buffer times
-5. Account for location and travel time when relevant
+    instructions="""You are an event planning specialist. Your role is to:
+1. Find and evaluate event venues and services
+2. Create schedules and timelines
+3. Coordinate with multiple vendors and services
+4. Handle RSVPs and guest management
 
-For each scheduling task:
-- Validate date and time formats
-- Check for scheduling conflicts
-- Provide alternative options when needed
-- Include relevant location details
-- Note any specific requirements or constraints""",
+Use available tools to:
+- Search for venue information
+- Calculate travel times and accessibility
+- Research vendors and services
+- Compare prices and availability
+
+Always consider:
+- Event type and size
+- Budget constraints
+- Location accessibility
+- Vendor availability
+- Weather considerations
+- Backup plans and alternatives""",
+    tools={
+        "web_search": web_search,
+        "get_distance_matrix": get_distance_matrix,
+        "get_directions": get_directions
+    },
     response_format=SchedulingResponse
 )
 
-# Define the Navigation Agent
-NavigationAgent = Agent(
-    name="Navigation Agent",
+# Transportation Agent
+TransportationAgent = Agent(
+    name="Transportation Agent",
     model="gpt-4o-mini-2024-07-18",
-    instructions="""You are a navigation and routing specialist. Your role is to:
-1. Plan optimal routes between locations
-2. Consider multiple transportation modes
-3. Account for traffic and timing
-4. Provide turn-by-turn directions
-5. Calculate accurate travel times and distances
+    instructions="""You are a transportation and navigation specialist. Your role is to:
+1. Plan optimal routes for various transportation modes
+2. Compare different transportation options
+3. Consider traffic patterns and delays
+4. Provide real-time navigation assistance
 
-For each navigation request:
-- Break down into clear steps
-- Include distance and duration for each step
-- Specify transport modes
-- Note any potential issues or alternatives
-- Consider real-time factors when possible""",
+Use available tools to:
+- Calculate routes and travel times
+- Search for transportation services
+- Check traffic conditions
+- Find parking options
+
+Always consider:
+- Multiple transport modes
+- Traffic conditions
+- Cost comparisons
+- Accessibility needs
+- Time constraints
+- Weather impact""",
+    tools={
+        "web_search": web_search,
+        "get_distance_matrix": get_distance_matrix,
+        "get_directions": get_directions
+    },
     response_format=NavigationResponse
-)
-
-# Define the Concierge Agent
-ConciergeAgent = Agent(
-    name="Concierge Agent",
-    model="gpt-4o-mini-2024-07-18",
-    instructions="""You are a recommendations and personalization specialist. Your role is to:
-1. Understand user preferences and requirements
-2. Provide tailored recommendations
-3. Consider multiple factors (price, rating, availability)
-4. Offer alternatives and options
-5. Include relevant details for decision-making
-
-For each recommendation:
-- Include comprehensive details
-- Provide ratings and reviews when available
-- Note availability and constraints
-- Consider user context and preferences
-- Offer multiple options when appropriate""",
-    response_format=ConciergeResponse
 )
 
 # Export all agents
 EXECUTION_AGENTS = {
-    "Location Agent": LocationAgent,
-    "Search Agent": SearchAgent,
-    "Scheduling Agent": SchedulingAgent,
-    "Navigation Agent": NavigationAgent,
-    "Concierge Agent": ConciergeAgent
+    "Movie Booking Agent": MovieBookingAgent,
+    "Restaurant Booking Agent": RestaurantBookingAgent,
+    "Event Planning Agent": EventPlanningAgent,
+    "Transportation Agent": TransportationAgent
 }

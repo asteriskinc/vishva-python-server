@@ -16,7 +16,7 @@ class DictList(BaseModel):
 
 """------------Our Core Classes and Types Here------------"""
 
-AgentTool = Callable[[], str]
+AgentTool = Callable[[], Any]
 
 class Agent(BaseModel): 
     name: str = "Agent" 

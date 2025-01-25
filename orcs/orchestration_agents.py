@@ -39,13 +39,7 @@ For each subtask, consider:
 - Is it directly necessary (category 1) or optionally helpful (category 2)?
 - Which agent is best suited for this specific subtask?
 - What specific actions will be taken?
-
-Available Agents and their capabilities:
-- Location Agent: location-based searches and queries
-- Search Agent: web searches and comparisons
-- Scheduling Agent: time-based tasks and scheduling
-- Navigation Agent: routing and transportation
-- Concierge Agent: recommendations and personalized suggestions""",
+""",
     response_format=PlannerResponse
 )
 

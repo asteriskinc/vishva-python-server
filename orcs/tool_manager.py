@@ -10,7 +10,7 @@ class ToolRegistry:
     """Registry for managing tool functions and their metadata."""
     
     def __init__(self):
-        self.tools: Dict[str, Dict[str, Any]] = {}
+        self.tools: Dict[str, Dict[str, Any]] = {} 
         self.functions: Dict[str, Callable] = {}
     
     def register(self, description: str, strict: bool = True):
@@ -93,46 +93,6 @@ class ToolRegistry:
         """Get tools by function names in OpenAI format."""
         return [self.tools[name] for name in agent.tools.keys() if name in self.tools]
     
-    async def execute_tool(self, name: str, params: Dict[str, Any]) -> Any:
-        """Execute a registered tool by name with given parameters."""
-        if name not in self.functions:
-            raise ValueError(f"Tool '{name}' not found")
-            
-        func = self.functions[name]
-        result = await func(**params)
-        
-        # If result is a Pydantic model, convert to dict
-        if isinstance(result, BaseModel):
-            return result.model_dump()
-        return result
-    
-    async def process_openai_response(self, response: Any) -> Optional[Dict[str, Any]]:
-        """
-        Process an OpenAI API response containing tool calls.
-        Returns the tool execution results if any tools were called.
-        """
-        message = response.choices[0].message
-        
-        if not hasattr(message, 'tool_calls') or not message.tool_calls:
-            return None
-            
-        results = {}
-        for tool_call in message.tool_calls:
-            func_name = tool_call.function.name
-            try:
-                arguments = json.loads(tool_call.function.arguments)
-                result = await self.execute_tool(func_name, arguments)
-                results[tool_call.id] = {
-                    "name": func_name,
-                    "result": result
-                }
-            except Exception as e:
-                results[tool_call.id] = {
-                    "name": func_name,
-                    "error": str(e)
-                }
-                
-        return results
 
 # Global tool registry instance
 tool_registry = ToolRegistry()

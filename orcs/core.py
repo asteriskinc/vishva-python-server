@@ -1,9 +1,9 @@
 # orcs/core.py
 import uuid, json, asyncio
-from typing import Dict, List
+from typing import Any, Dict, List
 from datetime import datetime
 from openai import AsyncOpenAI
-from .orcs_types import Task, SubTask, TaskResult, TaskStatus, Agent, TaskDependency
+from .orcs_types import AgentTool, DictList, Task, SubTask, TaskResult, TaskStatus, Agent, TaskDependency, ToolCallResult
 from .orchestration_agents import PlannerAgent, DependencyAgent
 from .execution_agents import EXECUTION_AGENTS
 from .tool_manager import tool_registry
@@ -21,6 +21,7 @@ class ORCS:
         self.planner: Agent = PlannerAgent
         self.dependency_agent: Agent = DependencyAgent
         self.agents: Dict[str, Agent] = EXECUTION_AGENTS  # dictionary of all execution agents
+        self.tool_registry = tool_registry
 
     async def convert_query_to_task(self, user_query: str) -> Task:
         """
@@ -290,82 +291,265 @@ class ORCS:
 
     async def execute_subtask(self, subtask: SubTask) -> TaskResult:
         """
-        Execute a single subtask using its assigned agent.
-        Includes tool calling capabilities but currently only logs intended tool usage.
+        Execute a single subtask using its assigned agent, maintaining interaction history
+        and handling multiple rounds of tool calls until completion.
         """
         subtask.status = TaskStatus.IN_PROGRESS
         subtask.start_time = datetime.now().isoformat()
 
         # Get the agent assigned to this subtask
         agent: Agent = subtask.agent
-
-        # Prepare the input data for the agent
-        input_data = {
-            "subtask_id": subtask.subtask_id,
-            "task_id": subtask.task_id,
-            "instructions": subtask.detail,
-            "title": subtask.title,
-            "previous_results": [
-                self.completed_results[dep.subtask_id].model_dump(mode='json')
-                for dep in subtask.dependencies 
-                if dep.subtask_id in self.completed_results
-            ],
-        }
-
+        print(f"Agent assigned to subtask: {agent.name}")
         try:
-            # Get the tools for this agent from the tool registry
-            tools = tool_registry.get_agent_tools(agent)
-            
+            # Get the tools available to this agent from registry
+            tools = self.tool_registry.get_agent_tools(agent)
             print(f"\nAgent '{agent.name}' executing subtask '{subtask.title}'")
             print(f"Available tools: {[tool['function']['name'] for tool in tools]}")
 
-            # Make the API call with tool calling enabled
-            completion = await self.client.chat.completions.create(
-                model=agent.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": agent.instructions
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(input_data)
-                    }
-                ],
-                tools=tools if tools else None,
-                tool_choice=agent.tool_choice if agent.tool_choice else "auto"
-            )
-
-            # Log the response and any tool calls
-            response = completion.choices[0].message
-            print("\nModel Response:")
-            print(f"Content: {response.content}")
-
-            if hasattr(response, 'tool_calls') and response.tool_calls:
-                print("\nTool Calls Requested:")
-                for tool_call in response.tool_calls:
-                    print(f"\nTool: {tool_call.function.name}")
-                    print(f"Arguments: {tool_call.function.arguments}")
-
-            # For now, return a simplified result
-            # In the future, we'll execute the tool calls and include their results
-            return TaskResult(
-                status=TaskStatus.COMPLETED,
-                data={
-                    "agent_response": response.content,
-                    "intended_tool_calls": [
-                        {
-                            "tool": tool_call.function.name,
-                            "arguments": tool_call.function.arguments
-                        }
-                        for tool_call in (response.tool_calls or [])
-                    ]
+            # Initialize conversation with task context and instructions
+            messages = [
+                {
+                    "role": "system",
+                    "content": agent.instructions
                 },
-                message=f"Successfully executed {agent.name} for subtask: {subtask.title}",
+                {
+                    "role": "user",
+                    "content": f"""Execute the following subtask: {subtask.title}
+
+    Detailed Instructions: {subtask.detail}
+
+    Prior Task Context:
+    {subtask.get_formatted_history()}
+
+    You can use the available tools to gather any information needed. Once you have all necessary information,
+    provide a detailed summary of your findings. No need for any special indicators - simply stop making
+    tool calls when you have everything you need.
+
+    Always explain your thinking and next steps.
+    """
+                }
+            ]
+
+            MAX_ITERATIONS = 20  # Prevent infinite loops
+            iteration = 0
+
+            while iteration < MAX_ITERATIONS:
+                iteration += 1
+                print(f"\nIteration {iteration} of subtask execution")
+
+                # Make API call with tool calling enabled
+                completion = await self.client.chat.completions.create(
+                    model=agent.model,
+                    messages=messages,
+                    tools=tools if tools else None,
+                    tool_choice=agent.tool_choice if agent.tool_choice else "auto"
+                )
+
+                # Get the response
+                response = completion.choices[0].message
+
+                # Only add interaction if there's content to add
+                if response.content:
+                    subtask.add_interaction(
+                        agent_name=agent.name,
+                        content=response.content
+                    )
+
+                # Check if there are any tool calls
+                if hasattr(response, 'tool_calls') and response.tool_calls:
+                    tool_results = []
+                    
+                    for tool_call in response.tool_calls:
+                        print(f"\nExecuting tool call: {tool_call.function.name}")
+                        print(f"Arguments: {tool_call.function.arguments}")
+                        
+                        try:
+                            # Execute the tool call
+                            tool_result = await self._execute_tool_call(tool_call)
+                            tool_results.append(tool_result)
+                            
+                        except Exception as e:
+                            print(f"Error executing tool {tool_call.function.name}: {str(e)}")
+                            tool_result = ToolCallResult(
+                                tool_name=tool_call.function.name,
+                                arguments=DictList(items=[]),
+                                result=DictList(items=[]),
+                                error=str(e),
+                                timestamp=datetime.now().isoformat()
+                            )
+                            tool_results.append(tool_result)
+
+                    # Only add tool results interaction if there are results
+                    if tool_results:
+                        subtask.add_interaction(
+                            agent_name="system",
+                            content="Tool execution results",
+                            tool_calls=tool_results
+                        )
+
+                    # Add assistant's response and tool calls to conversation
+                    assistant_message = {
+                        "role": "assistant",
+                        "content": response.content if response.content else "",
+                        "tool_calls": [
+                            {
+                                "id": tool_call.id,
+                                "type": "function",
+                                "function": {
+                                    "name": tool_call.function.name,
+                                    "arguments": tool_call.function.arguments
+                                }
+                            } for tool_call in response.tool_calls
+                        ]
+                    }
+                    messages.append(assistant_message)
+                    
+                    # Add tool results to messages, matching tool_call_id with the original call
+                    for tool_result, tool_call in zip(tool_results, response.tool_calls):
+                        messages.append({
+                            "role": "tool",
+                            "content": json.dumps(tool_result.result.to_dict()),
+                            "tool_call_id": tool_call.id  # Use the actual tool_call.id
+                        })
+                else:
+                    # No tool calls - agent has finished gathering information
+                    # Add the final narrative response to messages
+                    messages.append({
+                        "role": "assistant",
+                        "content": response.content
+                    })
+                    
+                    print("\nAgent completed information gathering. Getting structured response...")
+                    
+                    # Get structured response using parse
+                    final_completion = await self.client.beta.chat.completions.parse(
+                        model=agent.model,
+                        messages=messages,
+                        response_format=agent.response_format
+                    )
+                    
+                    structured_response = final_completion.choices[0].message.parsed
+                    print(f"\nStructured Response: {structured_response}")
+
+                    # Record the final structured response
+                    subtask.add_interaction(
+                        agent_name=agent.name,
+                        content=f"Final Structured Response: {json.dumps(structured_response.model_dump())}"
+                    )
+
+                    # Create final result
+                    task_result = TaskResult(
+                        status=TaskStatus.COMPLETED,
+                        data=structured_response.model_dump(),
+                        message="Task completed successfully",
+                        timestamp=datetime.now().isoformat()
+                    )
+
+                    subtask.status = TaskStatus.COMPLETED
+                    subtask.end_time = datetime.now().isoformat()
+                    subtask.result = task_result
+
+                    return task_result
+
+                # Check if max iterations reached
+                if iteration == MAX_ITERATIONS:
+                    print(f"\nReached maximum iterations ({MAX_ITERATIONS})")
+                    subtask.add_interaction(
+                        agent_name="system",
+                        content="Task incomplete: Maximum iterations reached"
+                    )
+                    raise ValueError("Maximum iterations reached without completion")
+
+            return TaskResult(
+                status=TaskStatus.FAILED,
+                data={},
+                message="Task did not reach completion state",
                 timestamp=datetime.now().isoformat()
             )
 
         except Exception as e:
             error_msg = f"Error in subtask '{subtask.title}': {str(e)}"
             print(error_msg)
+            
+            # Record the error in history
+            subtask.add_interaction(
+                agent_name="system",
+                content=f"Error: {error_msg}"
+            )
+            
+            subtask.status = TaskStatus.FAILED
+            subtask.end_time = datetime.now().isoformat()
+            
             raise ValueError(error_msg)
+        
+    async def _execute_tool_call(
+        self,
+        tool_call: Any
+    ) -> ToolCallResult:
+        """
+        Execute a tool call using the registered function from tool registry.
+        Each tool returns a well-defined Pydantic model that we can convert to dict.
+        
+        Args:
+            tool_call: The tool call from the OpenAI API response
+                
+        Returns:
+            ToolCallResult containing the execution results
+        """
+        try:
+            tool_name = tool_call.function.name
+            
+            # Check if tool exists in registry
+            if tool_name not in self.tool_registry.functions:
+                raise ValueError(f"Tool '{tool_name}' not found in registry")
+                
+            # Get the actual function from registry
+            tool_func = self.tool_registry.functions[tool_name]
+            
+            # Parse the arguments from the tool call
+            arguments = json.loads(tool_call.function.arguments)
+            
+            # Convert arguments to DictList format for storage
+            arguments_dict = DictList(items=[
+                DictList.Item(key=k, value=str(v))
+                for k, v in arguments.items()
+            ])
+            
+            print(f"\nExecuting tool: {tool_name}")
+            print(f"Arguments: {arguments}")
+            
+            # Execute the tool function and convert result to dict
+            result = await tool_func(**arguments)
+            result_dict = result.model_dump()
+            
+            # print some of the metadata like title, url, source, snippet and a small sample of the content
+            print(f"Title: {result_dict['title']}")
+            print(f"URL: {result_dict['url']}")
+            print(f"Source: {result_dict['source']}")
+            print(f"Snippet: {result_dict['snippet']}")
+            print(f"Content: {result_dict['content'][:100]}...")
+            
+            # Convert result to DictList format
+            result_dict_list = DictList(items=[
+                DictList.Item(key=k, value=str(v))
+                for k, v in result_dict.items()
+            ])
+            
+            return ToolCallResult(
+                tool_name=tool_name,
+                arguments=arguments_dict,
+                result=result_dict_list,
+                timestamp=datetime.now().isoformat()
+            )
+            
+        except Exception as e:
+            error_msg = f"Error executing tool {tool_call.function.name}: {str(e)}"
+            print(f"Tool execution failed: {error_msg}")
+            
+            return ToolCallResult(
+                tool_name=tool_call.function.name,
+                arguments=arguments_dict if 'arguments_dict' in locals() else DictList(items=[]),
+                result=DictList(items=[]),
+                error=error_msg,
+                timestamp=datetime.now().isoformat()
+            )

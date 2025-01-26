@@ -42,7 +42,7 @@ class AgentInteraction(BaseModel):
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
 
 """------------Core Types------------"""
-AgentTool = Callable[[], str]
+AgentTool = Callable[[], DictList]
 
 class Agent(BaseModel): 
     name: str = "Agent" 

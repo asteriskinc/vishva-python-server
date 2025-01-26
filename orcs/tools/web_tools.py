@@ -1,4 +1,5 @@
 # orcs/tools/web_tools.py
+import os
 from typing import Dict, List, Optional, Any, Tuple
 from pydantic import BaseModel
 import aiohttp
@@ -8,6 +9,11 @@ from bs4 import BeautifulSoup
 import json
 from googlesearch import search
 from ..tool_manager import tool_registry
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 # Response Models
 class SearchResult(BaseModel):
@@ -50,83 +56,108 @@ class NavigationResponse(BaseModel):
     end_location: str
     transport_mode: str
 
-# Combined Web Search and Content Tool
-@tool_registry.register(description="Perform a web search and retrieve content from results")
+@tool_registry.register(description="Perform a web search using Brave Search API")
 async def web_search(
     query: str,
     num_results: int = 5,
     fetch_content: bool = True
 ) -> WebSearchResponse:
     """
-    Perform a web search and optionally fetch content from result URLs.
+    Perform a web search using Brave Search API and optionally fetch content from results.
     
     Args:
         query: Search query string
-        num_results: Number of results to return
+        num_results: Number of results to return (max 20)
         fetch_content: Whether to fetch and parse content from result URLs
-    
-    Returns:
-        WebSearchResponse containing search results and content
     """
     try:
-        # Use run_in_executor to run sync Google search in async context
-        loop = asyncio.get_running_loop()
-        search_results = await loop.run_in_executor(
-            None, 
-            lambda: list(search(query, num_results=num_results))
-        )
-        
-        # Process search results and fetch content if requested
-        processed_results = []
+        logger.info(f"Performing web search: {query}")
+
+        # Get API key from environment
+        api_key = os.getenv('BRAVE_SEARCH_API_KEY')
+        if not api_key:
+            raise ValueError("BRAVE_SEARCH_API_KEY not found in environment variables")
+
+        # Prepare the search request
+        brave_search_url = 'https://api.search.brave.com/res/v1/web/search'
+        headers = {
+            'Accept': 'application/json',
+            'Accept-Encoding': 'gzip',
+            'X-Subscription-Token': api_key
+        }
+        params = {
+            'q': query,
+            'count': min(num_results, 20),  # Brave limits to 20 results per request
+            'search_lang': 'en',
+            'safesearch': 'moderate',
+            'extra_snippets': 'true',  # Get more detailed snippets
+            'format': 'json'
+        }
+
+        total_results = 0
+        # Perform the search
         async with aiohttp.ClientSession() as session:
-            for i, url in enumerate(search_results):
-                source = url.split('/')[2] if '//' in url else url.split('/')[0]
+            async with session.get(brave_search_url, headers=headers, params=params) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(f"Brave Search API error: {error_text}")
+                    raise ValueError(f"Brave Search API returned status {response.status}")
                 
-                result = SearchResult(
-                    title=f"Result from {source}",
-                    url=url,
-                    snippet=f"Result {i+1} for query: {query}",
-                    source=source,
-                    relevance_score=1.0 - (i * 0.1)
-                )
-                
-                # Fetch content if requested
-                if fetch_content:
-                    try:
-                        async with session.get(url) as response:
-                            if response.status == 200:
-                                html = await response.text()
-                                soup = BeautifulSoup(html, 'html.parser')
-                                
-                                # Update title if available
-                                if soup.title:
-                                    result.title = soup.title.string
-                                
-                                # Extract main content
-                                main_content = []
-                                for p in soup.find_all('p'):
-                                    text = p.get_text().strip()
-                                    if text:
-                                        main_content.append(text)
-                                
-                                result.content = "\n".join(main_content)
-                                
-                                # Update snippet with first paragraph if available
-                                if main_content:
-                                    result.snippet = main_content[0][:200] + "..."
-                    except Exception as e:
-                        print(f"Error fetching content from {url}: {str(e)}")
-                
-                processed_results.append(result)
+                search_data = await response.json()
+                total_results = search_data.get('web', {}).get('total_results', 0)
+
+        # Process search results
+        processed_results = []
+        if 'web' in search_data and 'results' in search_data['web']:
+            async with aiohttp.ClientSession() as session:
+                for i, result in enumerate(search_data['web']['results']):                    
+                    # Create search result object
+                    search_result = SearchResult(
+                        title=result['title'],
+                        url=result['url'],
+                        snippet=result.get('description', ''),
+                        source=urllib.parse.urlparse(result['url']).netloc,
+                        relevance_score=1.0 - (i * 0.1)
+                    )
+
+                    # Fetch content if requested
+                    if fetch_content:
+                        try:
+                            headers = {
+                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                            }
+                            async with session.get(result['url'], headers=headers, timeout=10) as response:
+                                if response.status == 200:
+                                    html = await response.text()
+                                    
+                                    soup = BeautifulSoup(html, 'html.parser')
+                                    
+                                    # Extract main content
+                                    main_content = []
+                                    for p in soup.find_all('p'):
+                                        text = p.get_text().strip()
+                                        if text:
+                                            main_content.append(text)
+                                    
+                                    search_result.content = "\n".join(main_content)
+                                    logger.info(f"Successfully fetched content from {result['url']}")
+                        except Exception as e:
+                            logger.error(f"Error fetching content from {result['url']}: {str(e)}")
+                    
+                    processed_results.append(search_result)
+
+        logger.info(f"Search completed with {len(processed_results)} results")
         
         return WebSearchResponse(
             results=processed_results,
             query=query,
-            total_results=len(processed_results)
+            total_results=total_results
         )
-        
+
     except Exception as e:
+        logger.error(f"Search failed: {str(e)}")
         raise ValueError(f"Search failed: {str(e)}")
+
 
 # Distance Matrix Tool
 @tool_registry.register(description="Calculate distance and duration between locations")

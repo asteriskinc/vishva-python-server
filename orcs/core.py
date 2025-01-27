@@ -305,7 +305,7 @@ class ORCS:
             tools = self.tool_registry.get_agent_tools(agent)
             print(f"\nAgent '{agent.name}' executing subtask '{subtask.title}'")
             print(f"Available tools: {[tool['function']['name'] for tool in tools]}")
-
+            subtask_dependencies = [dep.subtask_id for dep in subtask.dependencies]
             # Initialize conversation with task context and instructions
             messages = [
                 {
@@ -319,7 +319,7 @@ class ORCS:
     Detailed Instructions: {subtask.detail}
 
     Prior Task Context:
-    {subtask.get_formatted_history()}
+    {self.tasks[subtask.task_id].get_context(subtask_dependencies)}
 
     You can use the available tools to gather any information needed. Once you have all necessary information,
     provide a detailed summary of your findings. No need for any special indicators - simply stop making

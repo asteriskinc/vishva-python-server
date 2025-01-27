@@ -173,7 +173,7 @@ class Task(BaseModel):
     clarificationResponse: Optional[str] = None
     timestamp: Optional[str] = None
 
-    def get_context(self) -> str:
+    def get_context(self, subtask_ids: List[str] = []) -> str:
         """
         Get the complete context of the task by aggregating all subtask histories.
         This includes all agent interactions, tool calls, and results across all subtasks.
@@ -194,8 +194,13 @@ class Task(BaseModel):
                 ""
             ])
 
+        if subtask_ids:
+            filtered_subtasks = [subtask for subtask in self.subtasks if subtask.subtask_id in subtask_ids]
+        else:
+            filtered_subtasks = self.subtasks
+
         # Add each subtask's history
-        for subtask in self.subtasks:
+        for subtask in filtered_subtasks:
             context_lines.extend([
                 f"=== Subtask: {subtask.title} ===",
                 f"Status: {subtask.status.value}",

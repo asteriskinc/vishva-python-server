@@ -30,13 +30,21 @@ class ORCS:
         # Create a unique task ID
         task_id = str(uuid.uuid4())
 
+        # Get available agent names for validation
+        available_agents = list(self.agents.keys())
+        
+        # Create a more explicit instruction about available agents
+        agent_instruction = (
+            "IMPORTANT: You MUST ONLY use agents from this list. Do not invent or suggest other agents:\n" +
+            "\n".join([f"- {agent.name}: {agent.instructions}" for agent in self.agents.values()])
+        )
+
         # Get planner response using parse
         completion = await self.client.beta.chat.completions.parse(
             model=self.planner.model,
             messages=[
                 {"role": "system", "content": self.planner.instructions},
-                {"role": "system", "content": "Available Agents and their capabilities:"},
-                {"role": "system", "content": "\n".join([f"- {agent.name}: {agent.instructions}" for agent in self.agents.values()])},
+                {"role": "system", "content": agent_instruction},
                 {"role": "user", "content": user_query},
             ],
             response_format=self.planner.response_format,
@@ -45,14 +53,17 @@ class ORCS:
         # Get the parsed response
         planner_output = completion.choices[0].message.parsed
 
-        # Create subtasks without dependencies initially
+        # Validate and filter subtasks
         subtasks = []
+        invalid_agents = []
+        
         for idx, subtask_data in enumerate(planner_output.subtasks):
-            # Get the appropriate agent for this subtask
             agent_name = subtask_data.agent
             agent = self.agents.get(agent_name)
+            
             if not agent:
-                raise ValueError(f"No agent found for name: {agent_name}")
+                invalid_agents.append(agent_name)
+                continue
 
             subtask = SubTask(
                 subtask_id=f"{task_id}_sub_{idx}",
@@ -60,32 +71,55 @@ class ORCS:
                 agent=agent,
                 title=subtask_data.title,
                 detail=subtask_data.detail,
-                category=subtask_data.category,  # Make sure category is included
+                category=subtask_data.category,
                 status=TaskStatus.PENDING,
             )
             subtasks.append(subtask)
 
-        # Create the initial task object with the original query
+        # If invalid agents were found, create a new task with clarification
+        if invalid_agents:
+            error_msg = (
+                f"I noticed a request for unavailable agents: {', '.join(invalid_agents)}. "
+                f"I can only work with these agents: {', '.join(available_agents)}. "
+                "Could you please rephrase your request to use these available services?"
+            )
+            
+            # Create a task with clarification needed
+            task = Task(
+                task_id=task_id,
+                query=user_query,
+                subtasks=[],  # No subtasks until clarification
+                status=TaskStatus.PENDING,
+                start_time=datetime.now().isoformat(),
+                domain=planner_output.domain,
+                needsClarification=True,
+                clarificationPrompt=error_msg,
+                timestamp="Just now"
+            )
+            
+            self.tasks[task_id] = task
+            return task
+
+        # Create the task object with valid subtasks
         task = Task(
             task_id=task_id,
-            query=user_query,  # Set the original query
+            query=user_query,
             subtasks=subtasks,
             status=TaskStatus.PENDING,
             start_time=datetime.now().isoformat(),
-            domain=planner_output.domain,  # Set domain from planner output
-            needsClarification=planner_output.needsClarification,  # Set clarification flag
-            clarificationPrompt=planner_output.clarificationPrompt,  # Set clarification prompt
-            timestamp="Just now"  # Add a basic timestamp
+            domain=planner_output.domain,
+            needsClarification=planner_output.needsClarification,
+            clarificationPrompt=planner_output.clarificationPrompt,
+            timestamp="Just now"
         )
 
-        # Get and set dependencies
-        dependencies = await self.get_dependencies(task, planner_output)
-
-        # Update subtasks with their dependencies
-        subtask_dict = {subtask.subtask_id: subtask for subtask in task.subtasks}
-        for dep in dependencies:
-            if dep.subtask_id in subtask_dict:
-                subtask_dict[dep.subtask_id].dependencies.append(dep)
+        # Only get dependencies if we have valid subtasks
+        if subtasks:
+            dependencies = await self.get_dependencies(task, planner_output)
+            subtask_dict = {subtask.subtask_id: subtask for subtask in task.subtasks}
+            for dep in dependencies:
+                if dep.subtask_id in subtask_dict:
+                    subtask_dict[dep.subtask_id].dependencies.append(dep)
 
         # Store the task
         self.tasks[task_id] = task
@@ -330,7 +364,7 @@ class ORCS:
                 }
             ]
 
-            MAX_ITERATIONS = 20  # Prevent infinite loops
+            MAX_ITERATIONS = 5  # Prevent infinite loops
             iteration = 0
 
             while iteration < MAX_ITERATIONS:

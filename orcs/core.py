@@ -557,16 +557,17 @@ class ORCS:
             result_dict = result.model_dump()
             
             # print some of the metadata like title, url, source, snippet and a small sample of the content
-            print(f"Title: {result_dict['title']}")
-            print(f"URL: {result_dict['url']}")
-            print(f"Source: {result_dict['source']}")
-            print(f"Snippet: {result_dict['snippet']}")
-            print(f"Content: {result_dict['content'][:100]}...")
+            print(f"Title: {result_dict['results'][0]['title']}")
+            print(f"URL: {result_dict['results'][0]['url']}")
+            print(f"Source: {result_dict['results'][0]['source']}")
+            print(f"Snippet: {result_dict['results'][0]['snippet']}")
+            print(f"Content: {result_dict['results'][0]['content'][:100]}...")
             
             # Convert result to DictList format
             result_dict_list = DictList(items=[
                 DictList.Item(key=k, value=str(v))
-                for k, v in result_dict.items()
+                for dict in result_dict['results']
+                for k, v in dict.items()
             ])
             
             return ToolCallResult(

@@ -110,41 +110,48 @@ async def web_search(
         processed_results = []
         if 'web' in search_data and 'results' in search_data['web']:
             async with aiohttp.ClientSession() as session:
-                for i, result in enumerate(search_data['web']['results']):                    
-                    # Create search result object
-                    search_result = SearchResult(
+                # Create all search result objects first
+                search_results = [
+                    SearchResult(
                         title=result['title'],
                         url=result['url'],
                         snippet=result.get('description', ''),
                         source=urllib.parse.urlparse(result['url']).netloc,
                         relevance_score=1.0 - (i * 0.1)
                     )
-
-                    # Fetch content if requested
-                    if fetch_content:
+                    for i, result in enumerate(search_data['web']['results'])
+                ]
+                
+                if fetch_content:
+                    # Create fetch tasks for all URLs
+                    async def fetch_content(url: str, headers: Dict) -> Optional[str]:
                         try:
-                            headers = {
-                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-                            }
-                            async with session.get(result['url'], headers=headers, timeout=10) as response:
+                            async with session.get(url, headers=headers, timeout=10) as response:
                                 if response.status == 200:
                                     html = await response.text()
-                                    
                                     soup = BeautifulSoup(html, 'html.parser')
-                                    
-                                    # Extract main content
-                                    main_content = []
-                                    for p in soup.find_all('p'):
-                                        text = p.get_text().strip()
-                                        if text:
-                                            main_content.append(text)
-                                    
-                                    search_result.content = "\n".join(main_content)
-                                    logger.info(f"Successfully fetched content from {result['url']}")
+                                    main_content = [p.get_text().strip() for p in soup.find_all('p') if p.get_text().strip()]
+                                    return "\n".join(main_content)
                         except Exception as e:
-                            logger.error(f"Error fetching content from {result['url']}: {str(e)}")
+                            logger.error(f"Error fetching content from {url}: {str(e)}")
+                            return None
                     
-                    processed_results.append(search_result)
+                    headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                    }
+                    
+                    # Fetch all content in parallel
+                    contents = await asyncio.gather(*[
+                        fetch_content(result.url, headers) for result in search_results
+                    ])
+                    
+                    # Update search results with fetched content
+                    for result, content in zip(search_results, contents):
+                        if content:
+                            result.content = content
+                            logger.info(f"Content fetched for {result.url}")
+
+                processed_results = search_results
 
         logger.info(f"Search completed with {len(processed_results)} results")
         

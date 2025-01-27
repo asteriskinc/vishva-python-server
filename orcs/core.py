@@ -364,7 +364,7 @@ class ORCS:
                 }
             ]
 
-            MAX_ITERATIONS = 5  # Prevent infinite loops
+            MAX_ITERATIONS = 15  # Prevent infinite loops
             iteration = 0
 
             while iteration < MAX_ITERATIONS:
@@ -561,7 +561,7 @@ class ORCS:
             print(f"URL: {result_dict['results'][0]['url']}")
             print(f"Source: {result_dict['results'][0]['source']}")
             print(f"Snippet: {result_dict['results'][0]['snippet']}")
-            print(f"Content: {result_dict['results'][0]['content'][:100]}...")
+            print(f"Content: {result_dict['results'][0]['content']}")
             
             # Convert result to DictList format
             result_dict_list = DictList(items=[

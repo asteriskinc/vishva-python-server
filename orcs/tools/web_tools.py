@@ -10,10 +10,17 @@ import json
 from googlesearch import search
 from ..tool_manager import tool_registry
 import logging
+import random
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+USER_AGENTS = [
+    'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1'
+]
 
 # Response Models
 class SearchResult(BaseModel):
@@ -124,21 +131,77 @@ async def web_search(
                 
                 if fetch_content:
                     # Create fetch tasks for all URLs
-                    async def fetch_content(url: str, headers: Dict) -> Optional[str]:
-                        try:
-                            async with session.get(url, headers=headers, timeout=10) as response:
-                                if response.status == 200:
-                                    html = await response.text()
-                                    soup = BeautifulSoup(html, 'html.parser')
-                                    main_content = [p.get_text().strip() for p in soup.find_all('p') if p.get_text().strip()]
-                                    return "\n".join(main_content)
-                        except Exception as e:
-                            logger.error(f"Error fetching content from {url}: {str(e)}")
-                            return None
-                    
                     headers = {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+                        'Accept-Language': 'en-US,en;q=0.9',
+                        'Referer': 'https://www.google.com/',
+                        'Accept-Encoding': 'gzip, deflate, br',
+                        'DNT': '1'
                     }
+                    
+                    # Add proxy support and rotation
+                    proxies = [
+                        None,  # First try direct connection
+                        # "http://proxy1:port",
+                        # "http://proxy2:port"
+                    ]
+                    
+                    # Enhanced content extraction with fallback
+                    async def fetch_content(url: str, headers: Dict) -> Optional[str]:
+                        for attempt in range(3):  # Retry mechanism
+                            try:
+                                proxy = proxies[attempt % len(proxies)]
+                                connector = aiohttp.TCPConnector(ssl=False) if proxy else None
+                                
+                                # Create session with compression enabled
+                                async with aiohttp.ClientSession(
+                                    connector=connector,
+                                    headers=headers,
+                                    # Enable compression by not disabling it
+                                    auto_decompress=True
+                                ) as session:
+                                    async with session.get(url, timeout=20) as response:
+                                        
+                                        # Bypass common paywall detection
+                                        if response.status in [403, 429]:
+                                            # Rotate user agent for next attempt
+                                            headers['User-Agent'] = random.choice(USER_AGENTS)
+                                            continue
+                                            
+                                        if response.status == 200:
+                                            html = await response.text()
+                                            
+                                            # First try with specialized extraction library
+                                            try:
+                                                from trafilatura import extract
+                                                content = extract(html, include_links=False)
+                                                if content:
+                                                    return content
+                                            except:
+                                                pass
+                                                
+                                            # Fallback to BeautifulSoup
+                                            soup = BeautifulSoup(html, 'html.parser')
+                                            
+                                            # Remove common ad containers
+                                            for selector in ['div.ad-container', 'aside', 'footer', 'nav', 'script', 'style']:
+                                                for element in soup.select(selector):
+                                                    element.decompose()
+                                                    
+                                            # Extract main content using common article selectors
+                                            main_content = soup.select_one('article, .article-body, .post-content, main')
+                                            if not main_content:
+                                                # Fallback to body if no specific containers found
+                                                main_content = soup.body
+                                                
+                                            return ' '.join(main_content.stripped_strings) if main_content else None
+                                            
+                            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                                logger.warning(f"Attempt {attempt+1} failed for {url}: {str(e)}")
+                                await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                                
+                        logger.error(f"All attempts failed for {url}")
+                        return None
                     
                     # Fetch all content in parallel
                     contents = await asyncio.gather(*[

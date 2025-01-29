@@ -149,7 +149,7 @@ async def web_search(
                     for result, content in zip(search_results, contents):
                         if content:
                             result.content = content
-                            logger.info(f"Content fetched for {result.url}")
+                            logger.info(f"Successfully fetched content from {result.url}")
 
                 processed_results = search_results
 

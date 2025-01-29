@@ -78,6 +78,7 @@ class WebSocketManager:
         """
         Queue a message to be sent to the WebSocket
         """
+        print(f"Sending message for task {task_id}:", message)  
         if task_id in self._message_queues:
             self._message_queues[task_id].append(message)
     

@@ -323,19 +323,16 @@ class ORCS:
             timestamp=task.end_time,
         )
 
-
     async def execute_subtask(self, subtask: SubTask, status_callback=None) -> TaskResult:
         """
         Execute a single subtask using its assigned agent, maintaining interaction history
-        and handling multiple rounds of tool calls until completion or graceful timeout.
+        and handling multiple rounds of tool calls until completion or max iterations.
         """
-        MAX_ITERATIONS = 5  # Consider making this configurable per agent or task type
-        PARTIAL_SUCCESS_THRESHOLD = 3  # Number of successful tool calls needed for partial success
+        MAX_ITERATIONS = 10  # Consider making this configurable per agent or task type
         
         subtask.status = TaskStatus.IN_PROGRESS
         subtask.start_time = datetime.now().isoformat()
         agent: Agent = subtask.agent
-        successful_tool_calls = 0
         collected_data = {}
         
         try:
@@ -367,7 +364,7 @@ class ORCS:
                     await status_callback(
                         subtask.subtask_id,
                         TaskStatus.IN_PROGRESS,
-                        f"Thinking..."
+                        f"{agent.name} agent is thinking..."
                     )
 
                 completion = await self.client.chat.completions.create(
@@ -385,201 +382,68 @@ class ORCS:
                         content=response.content
                     )
 
-                # Handle tool calls
-                if hasattr(response, 'tool_calls') and response.tool_calls:
-                    tool_results = []
-                    
-                    for tool_call in response.tool_calls:
-                        if status_callback:
-                            await status_callback(
-                                subtask.subtask_id,
-                                TaskStatus.IN_PROGRESS,
-                                f"Using {tool_call.function.name} to gather information..."
-                            )
-                        
-                        try:
-                            tool_result = await self._execute_tool_call(tool_call)
-                            tool_results.append(tool_result)
-                            successful_tool_calls += 1
-                            
-                            # Store successful tool call results
-                            if not tool_result.error:
-                                collected_data[tool_call.function.name] = tool_result.result.to_dict()
-                            
-                            if status_callback:
-                                await status_callback(
-                                    subtask.subtask_id,
-                                    TaskStatus.IN_PROGRESS,
-                                    f"Successfully gathered information..."
-                                )
-                                
-                        except Exception as e:
-                            error_msg = f"Error using {tool_call.function.name}: {str(e)}"
-                            if status_callback:
-                                await status_callback(
-                                    subtask.subtask_id,
-                                    TaskStatus.IN_PROGRESS,
-                                    error_msg
-                                )
-                            tool_result = ToolCallResult(
-                                tool_name=tool_call.function.name,
-                                arguments=DictList(items=[]),
-                                result=DictList(items=[]),
-                                error=str(e),
-                                timestamp=datetime.now().isoformat()
-                            )
-                            tool_results.append(tool_result)
+                # Handle tool calls if any
+                new_messages, tool_results = await self._handle_tool_calls(
+                    subtask, 
+                    response, 
+                    collected_data, 
+                    status_callback
+                )
+                messages.extend(new_messages)
 
-                    if tool_results:
-                        subtask.add_interaction(
-                            agent_name="system",
-                            content="Tool execution results",
-                            tool_calls=tool_results
-                        )
-
-                    messages.extend([
-                        {
-                            "role": "assistant",
-                            "content": response.content if response.content else "",
-                            "tool_calls": [
-                                {
-                                    "id": tc.id,
-                                    "type": "function",
-                                    "function": {
-                                        "name": tc.function.name,
-                                        "arguments": tc.function.arguments
-                                    }
-                                } for tc in response.tool_calls
-                            ]
-                        },
-                        *[{
-                            "role": "tool",
-                            "content": json.dumps(tr.result.to_dict()),
-                            "tool_call_id": tc.id
-                        } for tr, tc in zip(tool_results, response.tool_calls)]
-                    ])
-                else:
-                    # No more tool calls - finalizing response
-                    if status_callback:
-                        await status_callback(
-                            subtask.subtask_id,
-                            TaskStatus.IN_PROGRESS,
-                            "Finalizing results..."
-                        )
-
-                    messages.append({
-                        "role": "assistant",
-                        "content": response.content
-                    })
-                    
+                # If no tool calls, try to finalize the response
+                if not tool_results:
                     try:
-                        final_completion = await self.client.beta.chat.completions.parse(
-                            model=agent.model,
-                            messages=messages,
-                            response_format=agent.response_format
+                        return await self._finalize_response(
+                            subtask,
+                            messages,
+                            collected_data,
+                            response,
+                            status_callback
                         )
-                        
-                        structured_response = final_completion.choices[0].message.parsed
-                        subtask.add_interaction(
-                            agent_name=agent.name,
-                            content=f"Final Structured Response: {json.dumps(structured_response.model_dump())}"
-                        )
-
-                        task_result = TaskResult(
-                            status=TaskStatus.COMPLETED,
-                            data=structured_response.model_dump(),
-                            message="Task completed successfully",
-                            timestamp=datetime.now().isoformat()
-                        )
-
-                        subtask.status = TaskStatus.COMPLETED
-                        subtask.end_time = datetime.now().isoformat()
-                        subtask.result = task_result
-
-                        if status_callback:
-                            await status_callback(
-                                subtask.subtask_id,
-                                TaskStatus.COMPLETED,
-                                "Task completed successfully!"
-                            )
-
-                        return task_result
                     except Exception as parsing_error:
-                        # If parsing fails but we have collected data, try to create a partial response
-                        if successful_tool_calls >= PARTIAL_SUCCESS_THRESHOLD:
-                            partial_result = TaskResult(
-                                status=TaskStatus.COMPLETED,
-                                data=collected_data,
-                                message="Task completed with partial results",
-                                timestamp=datetime.now().isoformat()
-                            )
-                            
-                            if status_callback:
-                                await status_callback(
-                                    subtask.subtask_id,
-                                    TaskStatus.COMPLETED,
-                                    "Task completed with partial results"
-                                )
-                                
-                            return partial_result
                         raise parsing_error
 
                 if iteration == MAX_ITERATIONS:
-                    # Check if we have enough successful tool calls for a partial result
-                    if successful_tool_calls >= PARTIAL_SUCCESS_THRESHOLD:
-                        partial_result = TaskResult(
-                            status=TaskStatus.COMPLETED,
-                            data=collected_data,
-                            message=f"Task completed with partial results after {MAX_ITERATIONS} iterations",
-                            timestamp=datetime.now().isoformat()
-                        )
-                        
-                        subtask.status = TaskStatus.COMPLETED
-                        subtask.end_time = datetime.now().isoformat()
-                        subtask.result = partial_result
+                    # Include all collected data in the error result
+                    max_iter_result = TaskResult(
+                        status=TaskStatus.FAILED,
+                        data={
+                            'tool_call_history': collected_data,
+                            'iterations_completed': iteration,
+                            'final_message': response.content if response.content else None
+                        },
+                        message=f"Maximum iterations ({MAX_ITERATIONS}) reached",
+                        timestamp=datetime.now().isoformat()
+                    )
+                    
+                    subtask.status = TaskStatus.FAILED
+                    subtask.end_time = datetime.now().isoformat()
+                    subtask.result = max_iter_result
 
-                        if status_callback:
-                            await status_callback(
-                                subtask.subtask_id,
-                                TaskStatus.COMPLETED,
-                                "Task completed with partial results"
-                            )
-                            
-                        return partial_result
-                        
-                    error_msg = f"Maximum iterations ({MAX_ITERATIONS}) reached with insufficient data"
                     if status_callback:
                         await status_callback(
                             subtask.subtask_id,
                             TaskStatus.FAILED,
-                            error_msg
+                            f"Task ended after {MAX_ITERATIONS} iterations"
                         )
-                    raise ValueError(error_msg)
+                        
+                    raise ValueError(f"Maximum iterations ({MAX_ITERATIONS}) reached", max_iter_result)
 
         except Exception as e:
             error_msg = f"Error in subtask '{subtask.title}': {str(e)}"
             
-            # Even if we encounter an error, check if we have enough data for a partial result
-            if successful_tool_calls >= PARTIAL_SUCCESS_THRESHOLD:
-                partial_result = TaskResult(
-                    status=TaskStatus.COMPLETED,
-                    data=collected_data,
-                    message=f"Task completed with partial results despite error: {str(e)}",
-                    timestamp=datetime.now().isoformat()
-                )
-                
-                subtask.status = TaskStatus.COMPLETED
-                subtask.end_time = datetime.now().isoformat()
-                subtask.result = partial_result
-
-                if status_callback:
-                    await status_callback(
-                        subtask.subtask_id,
-                        TaskStatus.COMPLETED,
-                        "Task completed with partial results"
-                    )
-                    
-                return partial_result
+            # Create an error result that includes all collected data
+            error_result = TaskResult(
+                status=TaskStatus.FAILED,
+                data={
+                    'tool_call_history': collected_data,
+                    'error_details': str(e),
+                    'iterations_completed': iteration if 'iteration' in locals() else 0
+                },
+                message=error_msg,
+                timestamp=datetime.now().isoformat()
+            )
             
             if status_callback:
                 await status_callback(
@@ -595,9 +459,111 @@ class ORCS:
             
             subtask.status = TaskStatus.FAILED
             subtask.end_time = datetime.now().isoformat()
+            subtask.result = error_result
             
-            raise ValueError(error_msg)
+            raise ValueError(error_msg, error_result)
         
+    async def _handle_tool_calls(
+        self,
+        subtask: SubTask,
+        response,
+        collected_data: dict,
+        status_callback=None
+    ) -> tuple[list, list]:
+        """
+        Handle tool calls for a subtask execution.
+        
+        Args:
+            subtask: The subtask being executed
+            response: The OpenAI API response containing tool calls
+            collected_data: Dictionary to store tool call results
+            status_callback: Optional callback for status updates
+        
+        Returns:
+            tuple containing:
+            - List of message objects to extend the conversation
+            - List of tool results
+        """
+        tool_results = []
+        messages_to_add = []
+        
+        if not hasattr(response, 'tool_calls') or not response.tool_calls:
+            return [], []
+            
+        for tool_call in response.tool_calls:
+            if status_callback:
+                await status_callback(
+                    subtask.subtask_id,
+                    TaskStatus.IN_PROGRESS,
+                    f"Using {tool_call.function.name} to gather information..."
+                )
+            
+            try:
+                tool_result = await self._execute_tool_call(tool_call)
+                tool_results.append(tool_result)
+                
+                # Store tool call results regardless of error status
+                collected_data[tool_call.function.name] = {
+                    'result': tool_result.result.to_dict(),
+                    'error': tool_result.error,
+                    'timestamp': tool_result.timestamp
+                }
+                
+                if status_callback:
+                    await status_callback(
+                        subtask.subtask_id,
+                        TaskStatus.IN_PROGRESS,
+                        f"Information gathered from {tool_call.function.name}"
+                    )
+                    
+            except Exception as e:
+                error_msg = f"Error using {tool_call.function.name}: {str(e)}"
+                if status_callback:
+                    await status_callback(
+                        subtask.subtask_id,
+                        TaskStatus.IN_PROGRESS,
+                        error_msg
+                    )
+                tool_result = ToolCallResult(
+                    tool_name=tool_call.function.name,
+                    arguments=DictList(items=[]),
+                    result=DictList(items=[]),
+                    error=str(e),
+                    timestamp=datetime.now().isoformat()
+                )
+                tool_results.append(tool_result)
+
+        if tool_results:
+            subtask.add_interaction(
+                agent_name="system",
+                content="Tool execution results",
+                tool_calls=tool_results
+            )
+
+            messages_to_add = [
+                {
+                    "role": "assistant",
+                    "content": response.content if response.content else "",
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments
+                            }
+                        } for tc in response.tool_calls
+                    ]
+                },
+                *[{
+                    "role": "tool",
+                    "content": json.dumps(tr.result.to_dict()),
+                    "tool_call_id": tc.id
+                } for tr, tc in zip(tool_results, response.tool_calls)]
+            ]
+        
+        return messages_to_add, tool_results
+    
     async def _execute_tool_call(
         self,
         tool_call: Any
@@ -670,3 +636,71 @@ class ORCS:
                 error=error_msg,
                 timestamp=datetime.now().isoformat()
             )
+            
+    async def _finalize_response(
+            self,
+            subtask: SubTask,
+            messages: list,
+            collected_data: dict,
+            response,
+            status_callback=None
+        ) -> TaskResult:
+            """
+            Finalize the response for a subtask execution.
+            
+            Args:
+                subtask: The subtask being executed
+                messages: List of conversation messages
+                collected_data: Dictionary of collected tool call data
+                response: The OpenAI API response
+                status_callback: Optional callback for status updates
+                
+            Returns:
+                TaskResult containing the final structured response
+            """
+            if status_callback:
+                await status_callback(
+                    subtask.subtask_id,
+                    TaskStatus.IN_PROGRESS,
+                    "Finalizing results..."
+                )
+            
+            messages.append({
+                "role": "assistant",
+                "content": response.content
+            })
+            
+            final_completion = await self.client.beta.chat.completions.parse(
+                model=subtask.agent.model,
+                messages=messages,
+                response_format=subtask.agent.response_format
+            )
+            
+            structured_response = final_completion.choices[0].message.parsed
+            subtask.add_interaction(
+                agent_name=subtask.agent.name,
+                content=f"Final Structured Response: {json.dumps(structured_response.model_dump())}"
+            )
+            
+            task_result = TaskResult(
+                status=TaskStatus.COMPLETED,
+                data={
+                    'final_response': structured_response.model_dump(),
+                    'tool_call_history': collected_data
+                },
+                message="Task completed successfully",
+                timestamp=datetime.now().isoformat()
+            )
+            
+            subtask.status = TaskStatus.COMPLETED
+            subtask.end_time = datetime.now().isoformat()
+            subtask.result = task_result
+            
+            if status_callback:
+                await status_callback(
+                    subtask.subtask_id,
+                    TaskStatus.COMPLETED,
+                    "Task completed successfully!"
+                )
+            
+            return task_result

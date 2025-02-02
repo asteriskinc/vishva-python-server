@@ -1,6 +1,6 @@
 # server.py
 from datetime import datetime
-from typing import Dict
+from typing import Dict, Optional
 import asyncio, json, os, uvicorn, traceback
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -111,7 +111,12 @@ async def execute_task_workflow(
         ]
 
         # Status callback for ORCS
-        async def status_callback(subtask_id: str, status: TaskStatus, message: str):
+        async def status_callback(
+            subtask_id: str, 
+            status: TaskStatus, 
+            message: str,
+            content: Optional[dict] = None  # New optional content parameter
+        ):
             await websocket_manager.send_message(
                 task_id,
                 {
@@ -120,7 +125,8 @@ async def execute_task_workflow(
                         "subtask_id": subtask_id,
                         "status": status,
                         "message": message,
-                        "timestamp": datetime.now().isoformat()
+                        "timestamp": datetime.now().isoformat(),
+                        "content": content  # Add content if provided
                     }
                 }
             )

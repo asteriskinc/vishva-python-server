@@ -495,7 +495,14 @@ class ORCS:
                 await status_callback(
                     subtask.subtask_id,
                     TaskStatus.IN_PROGRESS,
-                    f"Using {tool_call.function.name} to gather information..."
+                    f"Using {tool_call.function.name} to gather information...",
+                    content={
+                        "type": "tool_call_start",
+                        "data": {
+                            "tool": tool_call.function.name,
+                            "arguments": json.loads(tool_call.function.arguments)
+                        }
+                    }
                 )
             
             try:
@@ -513,7 +520,15 @@ class ORCS:
                     await status_callback(
                         subtask.subtask_id,
                         TaskStatus.IN_PROGRESS,
-                        f"Information gathered from {tool_call.function.name}"
+                        f"Information gathered from {tool_call.function.name}",
+                        content={
+                            "type": "tool_result",
+                            "data": {
+                                "tool": tool_call.function.name,
+                                "result": tool_result.result.to_dict(),
+                                "error": tool_result.error
+                            }
+                        }
                     )
                     
             except Exception as e:
@@ -522,7 +537,14 @@ class ORCS:
                     await status_callback(
                         subtask.subtask_id,
                         TaskStatus.IN_PROGRESS,
-                        error_msg
+                        error_msg,
+                        content={
+                            "type": "tool_call_error",
+                            "data": {
+                                "tool": tool_call.function.name,
+                                "error": str(e)
+                            }
+                        }
                     )
                 tool_result = ToolCallResult(
                     tool_name=tool_call.function.name,
@@ -662,7 +684,14 @@ class ORCS:
                 await status_callback(
                     subtask.subtask_id,
                     TaskStatus.IN_PROGRESS,
-                    "Finalizing results..."
+                    "Finalizing results...",
+                    content={
+                        "type": "agent_response",
+                        "data": {
+                            "role": "assistant",
+                            "content": response.content if response.content else "",
+                        }
+                    }
                 )
             
             messages.append({

@@ -1,0 +1,110 @@
+[
+  {
+    "query": "Tesla Model Y specifications",
+    "duration_seconds": 3.710133,
+    "total_results_found": 3,
+    "results_fetched": 3,
+    "timestamp": "2025-02-02T18:22:33.108651",
+    "results": [
+      {
+        "url": "https://www.tesla.com/ownersmanual/modely/en_us/GUID-F617DA3E-11C1-4FBA-98A7-A9C3828E3536.html",
+        "title": "Specifications",
+        "source": "www.tesla.com",
+        "summary_length": 148,
+        "content_length": 17,
+        "relevance_score": 1.0,
+        "error": null
+      },
+      {
+        "url": "https://www.edmunds.com/tesla/model-y/",
+        "title": "2024 Tesla Model Y Prices, Reviews, and Pictures | Edmunds",
+        "source": "www.edmunds.com",
+        "summary_length": 160,
+        "content_length": 49820,
+        "relevance_score": 1.0,
+        "error": null
+      },
+      {
+        "url": "https://www.tesla.com/modely",
+        "title": "New Model Y | Tesla",
+        "source": "www.tesla.com",
+        "summary_length": 446,
+        "content_length": 36507,
+        "relevance_score": 1.0,
+        "error": null
+      }
+    ]
+  },
+  {
+    "query": "restaurants in Palo Alto open now",
+    "duration_seconds": 4.103832,
+    "total_results_found": 3,
+    "results_fetched": 3,
+    "timestamp": "2025-02-02T18:22:39.213859",
+    "results": [
+      {
+        "url": "https://www.yelp.com/search?find_desc=Restaurants+Open+Now&find_loc=Palo+Alto%2C+CA",
+        "title": "yelp.com",
+        "source": "www.yelp.com",
+        "summary_length": 156,
+        "content_length": 1,
+        "relevance_score": 1.0,
+        "error": null
+      },
+      {
+        "url": "https://www.tripadvisor.com/Restaurants-g32849-zfp8-Palo_Alto_California.html",
+        "title": "THE 10 BEST Late Night Restaurants in Palo Alto (UPDATED 2025)",
+        "source": "www.tripadvisor.com",
+        "summary_length": 292,
+        "content_length": 48711,
+        "relevance_score": 1.0,
+        "error": null
+      },
+      {
+        "url": "https://www.opentable.com/features/fun-restaurants-palo-alto-ca",
+        "title": "2 Best Fun Restaurants in Palo Alto | OpenTable",
+        "source": "www.opentable.com",
+        "summary_length": 227,
+        "content_length": 9536,
+        "relevance_score": 1.0,
+        "error": null
+      }
+    ]
+  },
+  {
+    "query": "latest movie showtimes AMC",
+    "duration_seconds": 4.068773,
+    "total_results_found": 3,
+    "results_fetched": 3,
+    "timestamp": "2025-02-02T18:22:45.283981",
+    "results": [
+      {
+        "url": "https://www.amctheatres.com/showtimes",
+        "title": "Movie Times at AMC Theatres",
+        "source": "www.amctheatres.com",
+        "summary_length": 79,
+        "content_length": 618,
+        "relevance_score": 1.0,
+        "error": null
+      },
+      {
+        "url": "https://www.amctheatres.com/movies",
+        "title": "Movies at AMC | View Showtimes & Get Tickets to New Movies in Theaters",
+        "source": "www.amctheatres.com",
+        "summary_length": 264,
+        "content_length": 14187,
+        "relevance_score": 1.0,
+        "error": null
+      },
+      {
+        "url": "https://www.amctheatres.com/",
+        "title": "AMC Theatres - movie times, movie trailers, buy tickets and gift cards.",
+        "source": "www.amctheatres.com",
+        "summary_length": 125,
+        "content_length": 19980,
+        "relevance_score": 1.0,
+        "error": null
+      }
+    ]
+  }
+]

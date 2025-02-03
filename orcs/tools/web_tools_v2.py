@@ -11,7 +11,7 @@ from datetime import datetime
 from ..tool_manager import tool_registry
 from crawl4ai import AsyncWebCrawler
 from crawl4ai.async_configs import BrowserConfig, CrawlerRunConfig, CacheMode
-from crawl4ai import MemoryAdaptiveDispatcher, CrawlerMonitor, DisplayMode
+from crawl4ai import MemoryAdaptiveDispatcher, CrawlerMonitor, DisplayMode, CrawlResult
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -35,48 +35,49 @@ class EnhancedWebSearchResponse(BaseModel):
     query: str
     total_results: int
 
+
 class ContentProcessor:
     """Process and extract content from crawl results"""
     
     @staticmethod
-    def extract_main_content(result) -> Dict[str, Any]:
+    def extract_main_content(result: CrawlResult) -> Dict[str, Any]:
         """Extract main content and metadata from crawl result"""
         processed = {
             'content': '',
             'title': '',
+            'metadata': {},
             'links': {
                 'internal': [],
                 'external': []
-            },
-            'metadata': {}
+            }
         }
         
-        # Extract markdown content if available
+        # First try to use markdown content if available
         if result.markdown:
-            processed['content'] = result.markdown
-            
-        # Process links
-        if result.links:
-            if isinstance(result.links, dict):
-                processed['links'] = result.links
+            if isinstance(result.markdown, str):
+                processed['content'] = result.markdown
             else:
-                # If links is a list, categorize them
-                base_domain = urllib.parse.urlparse(result.url).netloc
-                for link in result.links:
-                    link_domain = urllib.parse.urlparse(link).netloc
-                    if link_domain == base_domain:
-                        processed['links']['internal'].append(link)
-                    else:
-                        processed['links']['external'].append(link)
-        
+                # Handle MarkdownGenerationResult type
+                processed['content'] = result.markdown.markdown
+        # Fallback to extracted_content if available
+        elif result.extracted_content:
+            processed['content'] = result.extracted_content
+        # Last resort: cleaned_html if available
+        elif result.cleaned_html:
+            processed['content'] = result.cleaned_html
+            
+        # Process links - they're already categorized in the result
+        if result.links:
+            processed['links'] = result.links
+            
         # Extract metadata
         processed['metadata'] = result.metadata if result.metadata else {}
         
-        # Try to get title from various sources
+        # Try to get title from metadata
         if result.metadata and 'title' in result.metadata:
             processed['title'] = result.metadata['title']
+        # Fallback to trying to extract from HTML
         elif result.html:
-            # Try to extract title from HTML if available
             try:
                 from bs4 import BeautifulSoup
                 soup = BeautifulSoup(result.html, 'html.parser')
@@ -85,6 +86,12 @@ class ContentProcessor:
                     processed['title'] = title_tag.text.strip()
             except Exception:
                 pass
+        
+        # Add additional metadata from the result
+        if result.status_code:
+            processed['metadata']['status_code'] = result.status_code
+        if result.redirected_url:
+            processed['metadata']['redirected_url'] = result.redirected_url
                 
         return processed
 

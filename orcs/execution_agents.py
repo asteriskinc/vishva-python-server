@@ -2,7 +2,7 @@
 from pydantic import BaseModel
 from .orcs_types import Agent, DictList
 from .tools.web_tools import web_search, get_distance_matrix, get_directions
-
+from .tools.web_tools_v2 import enhanced_web_search
 # Response schemas for different agent types
 class LocationInfo(BaseModel):
     address: str
@@ -89,7 +89,8 @@ Always consider:
 - Seat availability
 - IMAX/3D/special format options""",
     tools={
-        "web_search": web_search,
+        # "web_search": web_search,
+        "enhanced_web_search": enhanced_web_search,
         "get_distance_matrix": get_distance_matrix,
         "get_directions": get_directions
     },
@@ -120,7 +121,8 @@ Always consider:
 - Special occasion requirements
 - Group size accommodations""",
     tools={
-        "web_search": web_search,
+        # "web_search": web_search,
+        "enhanced_web_search": enhanced_web_search,
         "get_distance_matrix": get_distance_matrix,
         "get_directions": get_directions
     },
@@ -151,7 +153,8 @@ Always consider:
 - Weather considerations
 - Backup plans and alternatives""",
     tools={
-        "web_search": web_search,
+        # "web_search": web_search,
+        "enhanced_web_search": enhanced_web_search,
         "get_distance_matrix": get_distance_matrix,
         "get_directions": get_directions
     },
@@ -182,7 +185,8 @@ Always consider:
 - Time constraints
 - Weather impact""",
     tools={
-        "web_search": web_search,
+        # "web_search": web_search,
+        "enhanced_web_search": enhanced_web_search,
         "get_distance_matrix": get_distance_matrix,
         "get_directions": get_directions
     },

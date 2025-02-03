@@ -586,34 +586,16 @@ class ORCS:
         
         return messages_to_add, tool_results
     
-    async def _execute_tool_call(
-        self,
-        tool_call: Any
-    ) -> ToolCallResult:
-        """
-        Execute a tool call using the registered function from tool registry.
-        Each tool returns a well-defined Pydantic model that we can convert to dict.
-        
-        Args:
-            tool_call: The tool call from the OpenAI API response
-                
-        Returns:
-            ToolCallResult containing the execution results
-        """
+    async def _execute_tool_call(self, tool_call: Any) -> ToolCallResult:
         try:
             tool_name = tool_call.function.name
             
-            # Check if tool exists in registry
             if tool_name not in self.tool_registry.functions:
                 raise ValueError(f"Tool '{tool_name}' not found in registry")
                 
-            # Get the actual function from registry
             tool_func = self.tool_registry.functions[tool_name]
-            
-            # Parse the arguments from the tool call
             arguments = json.loads(tool_call.function.arguments)
             
-            # Convert arguments to DictList format for storage
             arguments_dict = DictList(items=[
                 DictList.Item(key=k, value=str(v))
                 for k, v in arguments.items()
@@ -622,23 +604,32 @@ class ORCS:
             print(f"\nExecuting tool: {tool_name}")
             print(f"Arguments: {arguments}")
             
-            # Execute the tool function and convert result to dict
             result = await tool_func(**arguments)
             result_dict = result.model_dump()
             
-            # print some of the metadata like title, url, source, snippet and a small sample of the content
-            # print(f"Title: {result_dict['results'][0]['title']}")
-            # print(f"URL: {result_dict['results'][0]['url']}")
-            # print(f"Source: {result_dict['results'][0]['source']}")
-            # print(f"Snippet: {result_dict['results'][0]['snippet']}")
-            # print(f"Content: {result_dict['results'][0]['content'][:100]}...")
-            
-            # Convert result to DictList format
-            result_dict_list = DictList(items=[
-                DictList.Item(key=k, value=str(v))
-                for dict in result_dict['results']
-                for k, v in dict.items()
-            ])
+            # Special handling for enhanced web search results
+            if tool_name == "enhanced_web_search":
+                # Convert the enhanced search results to a more detailed format
+                result_dict_list = DictList(items=[
+                    DictList.Item(key=k, value=str(v))
+                    for result in result_dict['results']
+                    for k, v in {
+                        'title': result['title'],
+                        'url': result['url'],
+                        'summary': result['summary'],
+                        'content': result['content'][:1000] + '...' if len(result['content']) > 1000 else result['content'],
+                        'source': result['source'],
+                        'metadata': json.dumps({
+                            k: v for k, v in result['metadata'].items()
+                            if k in ['status_code', 'redirected_url']
+                        })
+                    }.items()
+                ])
+            else:
+                result_dict_list = DictList(items=[
+                    DictList.Item(key=k, value=str(v))
+                    for k, v in result_dict.items()
+                ])
             
             return ToolCallResult(
                 tool_name=tool_name,
